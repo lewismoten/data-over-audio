@@ -15,8 +15,10 @@ var MAX_DATA_POINTS = 1024;
 var FREQUENCY_TONE = 18000;
 var FREQUENCY_HIGH = 900;
 var FREQUENCY_LOW = 1200;
-var FREQUENCY_DURATION = 400;
-var FREQUENCY_THRESHOLD = 50;
+var FREQUENCY_DURATION = 800;
+var FREQUENCY_THRESHOLD = 210;
+var frequencyOverTime = [];
+var bitStart = [];
 
 function handleWindowLoad() {
   // grab dom elements
@@ -140,7 +142,13 @@ function analyzeAudio() {
   var audioContext = getAudioContext();
   const frequencyData = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(frequencyData);
-  drawFrequencyData(frequencyData);
+  frequencyOverTime.unshift(frequencyData);
+  bitStart.unshift(false);
+  if(frequencyOverTime.length > 1024) {
+    frequencyOverTime.length = 1024;
+    bitStart.length = 1024;
+  }
+  drawFrequencyData();
 
   function canHear(hz) {
     var length = (audioContext.sampleRate / analyser.fftSize);
@@ -172,9 +180,11 @@ function evaluateBit(highBits, lowBits) {
         bitHighStrength.length = 0;
         bitLowStrength.length = 0;
         bitStarted = now;
+        bitStart[0] = true;
       }
     } else {
       bitStarted = now;
+      bitStart[0] = true;
       bitHighStrength.length = 0;
       bitLowStrength.length = 0;
     }
@@ -183,6 +193,7 @@ function evaluateBit(highBits, lowBits) {
 } else {
     if(bitStarted) {
       bitStarted = undefined;
+      bitStart[0] = true;
       received(evaluateBit(bitHighStrength, bitLowStrength));
       received('\n');
     }
@@ -190,19 +201,29 @@ function evaluateBit(highBits, lowBits) {
   requestAnimationFrame(analyzeAudio);
 }
 
-function drawFrequencyData(frequencyData) {
-  const ctx = receivedGraph.getContext('2d');
+function drawBitStart(ctx, color) {
   const { width, height } = receivedGraph;
-  const segmentWidth = (1 / frequencyData.length) * width;
-  ctx.clearRect(0, 0, width, height);
-  const sorted = frequencyData.slice().sort((a, b) => a - b);
-  const min = 0;// sorted[0];
-  const max = 255;//sorted[sorted.length - 1];
-  const range = max - min;
+  const segmentWidth = (1 / 1024) * width;
+  ctx.strokeStyle = color;
+  for(let i = 0; i < bitStart.length; i++) {
+    if(!bitStart[i]) continue;
+    ctx.beginPath();
+    ctx.moveTo(segmentWidth * i, 0);
+    ctx.lineTo(segmentWidth * i, height);
+    ctx.stroke();
+  }
+}
+function drawFrequency(ctx, hz, color) {
+  const { width, height } = receivedGraph;
+  const segmentWidth = (1 / 1024) * width;
+  ctx.strokeStyle = color;
   ctx.beginPath();
-  for(let i = 0; i < frequencyData.length; i++) {
-    const value = frequencyData[i];
-    const y = (1-(value / range)) * height;
+  for(let i = 0; i < frequencyOverTime.length; i++) {
+    const frequencies = frequencyOverTime[i];
+    var length = (audioContext.sampleRate / analyser.fftSize);
+    var index = Math.round(hz / length);
+    const amplitude = frequencies[index];
+    const y = (1-(amplitude / 255)) * height;
     if(i === 0) {
       ctx.moveTo(0, y);
     } else {
@@ -210,6 +231,22 @@ function drawFrequencyData(frequencyData) {
     }
   }
   ctx.stroke();
+}
+function drawFrequencyData() {
+  const ctx = receivedGraph.getContext('2d');
+  const { width, height } = receivedGraph;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, width, height);
+  
+  const thresholdY = (1 - (FREQUENCY_THRESHOLD/255)) * height;
+  ctx.strokeStyle = 'grey';
+  ctx.moveTo(0, thresholdY);
+  ctx.lineTo(width, thresholdY);
+  ctx.stroke();
+  drawBitStart(ctx, 'grey');
+  drawFrequency(ctx, FREQUENCY_HIGH, 'red');
+  drawFrequency(ctx, FREQUENCY_LOW, 'blue');
 }
 
 function drawReceivedData() {
