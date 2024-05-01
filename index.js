@@ -15,7 +15,7 @@ var MAX_DATA_POINTS = 1024;
 var FREQUENCY_TONE = 18000;
 var FREQUENCY_HIGH = 900;
 var FREQUENCY_LOW = 1200;
-var FREQUENCY_DURATION = 100;
+var FREQUENCY_DURATION = 400;
 var FREQUENCY_THRESHOLD = 50;
 
 function handleWindowLoad() {
@@ -126,8 +126,13 @@ function handleListeningCheckbox(e) {
     }
   }
 }
-
-let listen = '';
+function received(value) {
+  receivedDataTextarea.value += value;
+  receivedDataTextarea.scrollTop = receivedDataTextarea.scrollHeight;
+}
+let bitStarted;
+let bitHighStrength = [];
+let bitLowStrength = [];
 function analyzeAudio() {
   if(!analyser) return;
   if(!microphoneNode) return;
@@ -146,17 +151,38 @@ function analyzeAudio() {
     var i = Math.round(hz / length);
     return frequencyData[i];
   }
+  const sum = (total, value) => total + value;
+function evaluateBit(highBits, lowBits) {
+  let highCount = highBits.reduce(
+    (count, highAmplitude, i) => 
+      count += highAmplitude > lowBits[i] ? 1 : 0
+    , 0
+  );
+  return highCount >= (highBits.length / 2) ? '1' : '0';
+}
 
   var high = canHear(FREQUENCY_HIGH);
   var low = canHear(FREQUENCY_LOW);
   if(high || low) {
-    listen += amplitude(FREQUENCY_HIGH) > amplitude(FREQUENCY_LOW) ? '1' : '0';
-  } else {
-    if(listen !== '') {
-      receivedDataTextarea.value += listen + '\n';
-      receivedDataTextarea.scrollTop = receivedDataTextarea.scrollHeight;
+    const now = performance.now();
+    if(bitStarted) {
+      if(now - bitStarted > FREQUENCY_DURATION) {
+        received(evaluateBit(bitHighStrength, bitLowStrength));
+        bitHighStrength.length = 0;
+        bitLowStrength.length = 0;
+        bitStarted = now;
+      }
+    } else {
+      bitStarted = now;
     }
-    listen = '';
+    bitHighStrength.push(amplitude(FREQUENCY_HIGH));
+    bitLowStrength.push(amplitude(FREQUENCY_LOW));
+} else {
+    if(bitStarted) {
+      bitStarted = undefined;
+      received(evaluateBit(bitHighStrength, bitLowStrength));
+      received('\n');
+    }
   }
   requestAnimationFrame(analyzeAudio);
 }
