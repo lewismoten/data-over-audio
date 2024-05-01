@@ -4,6 +4,7 @@
   "description": "Transfer data via Web Audio API",
   "main": "index.js",
   "scripts": {
+    "start": "vite --open http://localhost:5175/index.html --port 5175",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
