@@ -87,7 +87,8 @@ function handleListeningCheckbox(e) {
     microphoneStream = stream;
     microphoneNode = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2 ** 12;
+    analyser.smoothingTimeConstant = 0;
+    analyser.fftSize = 2 ** 15;
     microphoneNode.connect(analyser);
     requestAnimationFrame(analyzeAudio);
   }
@@ -166,7 +167,7 @@ function evaluateBit(highBits, lowBits) {
   if(high || low) {
     const now = performance.now();
     if(bitStarted) {
-      if(now - bitStarted > FREQUENCY_DURATION) {
+      if(now - bitStarted >= FREQUENCY_DURATION) {
         received(evaluateBit(bitHighStrength, bitLowStrength));
         bitHighStrength.length = 0;
         bitLowStrength.length = 0;
@@ -174,6 +175,8 @@ function evaluateBit(highBits, lowBits) {
       }
     } else {
       bitStarted = now;
+      bitHighStrength.length = 0;
+      bitLowStrength.length = 0;
     }
     bitHighStrength.push(amplitude(FREQUENCY_HIGH));
     bitLowStrength.push(amplitude(FREQUENCY_LOW));
