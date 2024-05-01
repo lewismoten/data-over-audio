@@ -9,7 +9,8 @@ var receivedGraph;
 var receivedData = [];
 var MAX_DATA_POINTS = 1024;
 
-var FREQUENCY_TONE = 500;
+// 20 to 20,000 - human
+var FREQUENCY_TONE = 18000;
 
 function handleWindowLoad() {
   // grab dom elements
@@ -39,7 +40,7 @@ function handleSendButtonClick() {
   oscillator.frequency.setValueAtTime(FREQUENCY_TONE, audioContext.currentTime);
   oscillator.connect(audioContext.destination);
   oscillator.start();
-  window.setTimeout(function() { oscillator.stop(); }, 100);
+  window.setTimeout(function() { oscillator.stop(); }, 500);
 
 }
 function handleListeningCheckbox(e) {
@@ -79,6 +80,7 @@ function analyzeAudio() {
   var audioContext = getAudioContext();
   const frequencyData = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(frequencyData);
+  drawFrequencyData(frequencyData);
 
   var frequencyIndex = Math.round(FREQUENCY_TONE / (audioContext.sampleRate / analyser.fftSize));
   const amplitude = frequencyData[frequencyIndex];
@@ -86,14 +88,36 @@ function analyzeAudio() {
   if(receivedData.length > MAX_DATA_POINTS) {
     receivedData.length = MAX_DATA_POINTS;
   }
-  drawReceivedData();
+  // drawReceivedData();
   if(amplitude > 0) {
-    receivedDataTextarea.value = `Frequency Detected. Amplitude: ${amplitude}`;
+    receivedDataTextarea.value = `Frequency ${FREQUENCY_TONE}Hz Detected. Amplitude: ${amplitude}`;
   } else {
-    receivedDataTextarea.value = 'Frequency Not Detected.';
+    receivedDataTextarea.value = `Frequency ${FREQUENCY_TONE}Hz Not Detected.`;
   }
 
   requestAnimationFrame(analyzeAudio);
+}
+
+function drawFrequencyData(frequencyData) {
+  const ctx = receivedGraph.getContext('2d');
+  const { width, height } = receivedGraph;
+  const segmentWidth = (1 / frequencyData.length) * width;
+  ctx.clearRect(0, 0, width, height);
+  const sorted = frequencyData.slice().sort((a, b) => a - b);
+  const min = 0;// sorted[0];
+  const max = 255;//sorted[sorted.length - 1];
+  const range = max - min;
+  ctx.beginPath();
+  for(let i = 0; i < frequencyData.length; i++) {
+    const value = frequencyData[i];
+    const y = (1-(value / range)) * height;
+    if(i === 0) {
+      ctx.moveTo(0, y);
+    } else {
+      ctx.lineTo(segmentWidth * i, y)
+    }
+  }
+  ctx.stroke();
 }
 
 function drawReceivedData() {
