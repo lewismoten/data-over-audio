@@ -141,14 +141,16 @@ function analyzeAudio() {
     var i = Math.round(hz / length);
     return frequencyData[i] > FREQUENCY_THRESHOLD;
   }
+  function amplitude(hz) {
+    var length = (audioContext.sampleRate / analyser.fftSize);
+    var i = Math.round(hz / length);
+    return frequencyData[i];
+  }
 
   var high = canHear(FREQUENCY_HIGH);
   var low = canHear(FREQUENCY_LOW);
   if(high || low) {
-    if(high && low) listen += '[';
-    if(high) listen += '1';
-    if(low) listen += '0';
-    if(high && low) listen += ']';
+    listen += amplitude(FREQUENCY_HIGH) > amplitude(FREQUENCY_LOW) ? '1' : '0';
   } else {
     if(listen !== '') {
       receivedDataTextarea.value += listen + '\n';
