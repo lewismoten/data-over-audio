@@ -96,7 +96,18 @@ function handleListeningCheckbox(e) {
   }
   if(e.target.checked) {
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia({
+        audio: {
+          mandatory: {
+            autoGainControl: false,
+            echoCancellation: false,
+            noiseSuppression: false,
+            suppressLocalAudioPlayback: false,
+            voiceIsolation: false
+          },
+          optional: []
+        }
+      })
       .then(handleMicrophoneOn)
       .catch(handleMicrophoneError)
   } else {
