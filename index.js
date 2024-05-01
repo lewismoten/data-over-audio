@@ -6,6 +6,7 @@ var microphoneStream;
 var microphoneNode;
 var analyser;
 var receivedDataTextarea;
+var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
 var MAX_DATA_POINTS = 1024;
@@ -15,6 +16,7 @@ var FREQUENCY_TONE = 18000;
 var FREQUENCY_HIGH = 900;
 var FREQUENCY_LOW = 1200;
 var FREQUENCY_DURATION = 100;
+var FREQUENCY_THRESHOLD = 50;
 
 function handleWindowLoad() {
   // grab dom elements
@@ -23,6 +25,7 @@ function handleWindowLoad() {
   receivedDataTextarea = document.getElementById('received-data');
   receivedGraph = document.getElementById('received-graph');
   textToSend = document.getElementById('text-to-send');
+  sentDataTextArea = document.getElementById('sent-data');
 
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
@@ -42,6 +45,8 @@ function getFrequency(bit) {
   return bit ? FREQUENCY_HIGH : FREQUENCY_LOW;
 }
 function sendBits(bits) {
+  sentDataTextArea.value += bits.join('') + '\n';
+  sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
   var audioContext = getAudioContext();
   var oscillator = audioContext.createOscillator();
   var duration = bits.length * FREQUENCY_DURATION;
@@ -82,7 +87,7 @@ function handleListeningCheckbox(e) {
     microphoneStream = stream;
     microphoneNode = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser.fftSize = 2 ** 12;
     microphoneNode.connect(analyser);
     requestAnimationFrame(analyzeAudio);
   }
@@ -100,13 +105,18 @@ function handleListeningCheckbox(e) {
       microphoneStream = undefined;
     }
     if(analyser && microphoneNode) {
-      analyser.disconnect(microphoneNode);
+      try {
+        analyser.disconnect(microphoneNode);
+      } catch(e) {
+
+      }
       microphoneNode = undefined;
       analyser = undefined;
     }
   }
 }
 
+let listen = '';
 function analyzeAudio() {
   if(!analyser) return;
   if(!microphoneNode) return;
@@ -115,19 +125,26 @@ function analyzeAudio() {
   analyser.getByteFrequencyData(frequencyData);
   drawFrequencyData(frequencyData);
 
-  var frequencyIndex = Math.round(FREQUENCY_TONE / (audioContext.sampleRate / analyser.fftSize));
-  const amplitude = frequencyData[frequencyIndex];
-  receivedData.unshift(amplitude);
-  if(receivedData.length > MAX_DATA_POINTS) {
-    receivedData.length = MAX_DATA_POINTS;
-  }
-  // drawReceivedData();
-  if(amplitude > 0) {
-    receivedDataTextarea.value = `Frequency ${FREQUENCY_TONE}Hz Detected. Amplitude: ${amplitude}`;
-  } else {
-    receivedDataTextarea.value = `Frequency ${FREQUENCY_TONE}Hz Not Detected.`;
+  function canHear(hz) {
+    var length = (audioContext.sampleRate / analyser.fftSize);
+    var i = Math.round(hz / length);
+    return frequencyData[i] > FREQUENCY_THRESHOLD;
   }
 
+  var high = canHear(FREQUENCY_HIGH);
+  var low = canHear(FREQUENCY_LOW);
+  if(high || low) {
+    if(high && low) listen += '[';
+    if(high) listen += '1';
+    if(low) listen += '0';
+    if(high && low) listen += ']';
+  } else {
+    if(listen !== '') {
+      receivedDataTextarea.value += listen + '\n';
+      receivedDataTextarea.scrollTop = receivedDataTextarea.scrollHeight;
+    }
+    listen = '';
+  }
   requestAnimationFrame(analyzeAudio);
 }
 
