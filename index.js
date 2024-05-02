@@ -34,6 +34,11 @@ function handleWindowLoad() {
   textToSend = document.getElementById('text-to-send');
   sentDataTextArea = document.getElementById('sent-data');
   samplesPerBitLabel = document.getElementById('samples-per-bit');
+  document.getElementById('bit-duration-text').addEventListener('input', (event) => {
+    FREQUENCY_DURATION = parseInt(event.target.value);
+    bitSampleCount = 0;
+    samplesPerBit.length = 0;
+  })
 
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
