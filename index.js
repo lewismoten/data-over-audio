@@ -28,6 +28,7 @@ var bitStart = [];
 var samplesPerBit = [];
 var bitSampleCount = 0;
 var PAUSE = false;
+var PAUSE_AFTER_END = true;
 
 function handleWindowLoad() {
   // grab dom elements
@@ -38,6 +39,11 @@ function handleWindowLoad() {
   textToSend = document.getElementById('text-to-send');
   sentDataTextArea = document.getElementById('sent-data');
   samplesPerBitLabel = document.getElementById('samples-per-bit');
+  document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
+  document.getElementById('pause-after-end').addEventListener('change', event => {
+    PAUSE_AFTER_END = event.target.checked;
+    if(!PAUSE_AFTER_END) resumeGraph();
+  })
   document.getElementById('bit-duration-text').addEventListener('input', (event) => {
     FREQUENCY_DURATION = parseInt(event.target.value);
     bitSampleCount = 0;
@@ -108,14 +114,22 @@ function sendBits(bits) {
       audioContext.currentTime + offset
     );
   }
-  console.log('removing pause');
-  if(PAUSE && isListeningCheckbox.checked) {
-    PAUSE = false;
-    requestAnimationFrame(analyzeAudio);
-  }
+  resumeGraph();
   oscillator.connect(audioContext.destination);
   oscillator.start();
   window.setTimeout(function() { oscillator.stop(); }, duration);
+}
+function resumeGraph() {
+  if(isListeningCheckbox.checked) {
+    if(PAUSE) {
+      PAUSE = false;
+      requestAnimationFrame(analyzeAudio);  
+    } else {
+      PAUSE = false;
+    }
+  } else {
+    PAUSE = false;
+  }
 }
 function getAudioContext() {
   if(!audioContext) {
@@ -137,6 +151,7 @@ function handleSendButtonClick() {
 
 }
 function handleListeningCheckbox(e) {
+  PAUSE = true;
   var audioContext = getAudioContext();
   function handleMicrophoneOn(stream) {
     microphoneStream = stream;
@@ -145,7 +160,7 @@ function handleListeningCheckbox(e) {
     analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
     analyser.fftSize = 2 ** FFT_POWER;
     microphoneNode.connect(analyser);
-    requestAnimationFrame(analyzeAudio);
+    resumeGraph();
   }
   function handleMicrophoneError(error) {
     console.error('Microphone Error', error);
@@ -270,11 +285,15 @@ function evaluateBit(highBits, lowBits) {
       bitStarted = undefined;
       bitStart[0] = true;
       received('\n');
-      if(!pauseTimeoutId) {
-        pauseTimeoutId = window.setTimeout(() => {
-          PAUSE = true;
-          pauseTimeoutId = undefined;
-        }, FREQUENCY_DURATION * 2);
+      if(PAUSE_AFTER_END) {
+        if(!pauseTimeoutId) {
+          pauseTimeoutId = window.setTimeout(() => {
+            pauseTimeoutId = undefined;
+            PAUSE = PAUSE_AFTER_END;
+          }, FREQUENCY_DURATION * 2);
+        }
+      } else if(pauseTimeoutId) {
+        window.clearTimeout(pauseTimeoutId);
       }
     }
   }

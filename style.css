@@ -2,7 +2,8 @@ body {
   background-color: darkolivegreen;
 }
 .panels {
-  display: flex
+  display: flex;
+  flex-wrap: wrap;
 }
 .panels > div {
   border: 1px solid black;
