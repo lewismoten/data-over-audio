@@ -10,7 +10,7 @@ var receivedDataTextarea;
 var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
-var MAX_DATA_POINTS = 100;
+var MAX_BITS_DISPLAYED_ON_GRAPH = 11;
 var MAX_DATA = 0;
 var pauseTimeoutId;
 
@@ -49,9 +49,9 @@ function handleWindowLoad() {
     bitSampleCount = 0;
     samplesPerBit.length = 0;
   });
-  document.getElementById('max-samples-on-graph').value= MAX_DATA_POINTS;
-  document.getElementById('max-samples-on-graph').addEventListener('input', (event) => {
-    MAX_DATA_POINTS = parseInt(event.target.value);
+  document.getElementById('max-bits-displayed-on-graph').value= MAX_BITS_DISPLAYED_ON_GRAPH;
+  document.getElementById('max-bits-displayed-on-graph').addEventListener('input', (event) => {
+    MAX_BITS_DISPLAYED_ON_GRAPH = parseInt(event.target.value);
   })
   document.getElementById('bit-duration-text').value = FREQUENCY_DURATION;
   document.getElementById('amplitude-threshold-text').value = FREQUENCY_THRESHOLD;
@@ -135,6 +135,20 @@ function resumeGraph() {
 function resetGraphData() {
   frequencyOverTime.length = 0;
   bitStart.length = 0;
+}
+function truncateGraphData() {
+  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const now = performance.now();
+  let length = frequencyOverTime.length;
+  while(length !== 0) {
+    const time = frequencyOverTime[length-1].time;
+    if(now - time > duration) length--;
+    else break;
+  }
+  if(length !== frequencyOverTime.length) {
+    frequencyOverTime.length = length;
+    bitStart.length = length;
+  }
 }
 function getAudioContext() {
   if(!audioContext) {
@@ -222,10 +236,7 @@ function analyzeAudio() {
   const max = frequencyData.reduce((m, v) => m > v ? m : v, 0);
   if(max > MAX_DATA) MAX_DATA = max;
   bitStart.unshift(false);
-  if(frequencyOverTime.length > MAX_DATA_POINTS) {
-    frequencyOverTime.length = MAX_DATA_POINTS;
-    bitStart.length = MAX_DATA_POINTS;
-  }
+  truncateGraphData();
   drawFrequencyData();
 
   function canHear(hz) {
@@ -302,8 +313,8 @@ function evaluateBit(highBits, lowBits) {
       }
     }
   }
-  if(samplesPerBit.length > MAX_DATA_POINTS) {
-    samplesPerBit.length = MAX_DATA_POINTS;
+  if(samplesPerBit.length > MAX_BITS_DISPLAYED_ON_GRAPH) {
+    samplesPerBit.length = MAX_BITS_DISPLAYED_ON_GRAPH;
   }
 
   samplesPerBitLabel.innerText = avgLabel(samplesPerBit);
@@ -319,12 +330,12 @@ function avgLabel(array) {
 function drawBitStart(ctx, color) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
-  const oldest = frequencyOverTime[frequencyOverTime.length-1].time;
-  const duration = newest - oldest;
+  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   ctx.strokeStyle = color;
   for(let i = 0; i < bitStart.length; i++) {
     if(!bitStart[i]) continue;
     const {time} = frequencyOverTime[i];
+    if(newest - time > duration) continue;
     const x = ((newest - time) / duration) * width;
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -335,13 +346,16 @@ function drawBitStart(ctx, color) {
 function drawFrequency(ctx, hz, color) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
-  const oldest = frequencyOverTime[frequencyOverTime.length-1].time;
-  const duration = newest - oldest;
+  const oldest = frequencyOverTime[frequencyOverTime.length -1].time;
+  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+
+  // console.log(duration, newest-oldest);
 
   ctx.strokeStyle = color;
   ctx.beginPath();
   for(let i = 0; i < frequencyOverTime.length; i++) {
     const {frequencies, time} = frequencyOverTime[i];
+    if(newest - time > duration) continue;
     const x = ((newest - time) / duration) * width;
 
     var length = (audioContext.sampleRate / analyser.fftSize);
@@ -376,14 +390,14 @@ function drawFrequencyData() {
 function drawReceivedData() {
   const ctx = receivedGraph.getContext('2d');
   const { width, height } = receivedGraph;
-  const segmentWidth = (1 / MAX_DATA_POINTS) * width;
+  const segmentWidth = (1 / MAX_BITS_DISPLAYED_ON_GRAPH) * width;
   ctx.clearRect(0, 0, width, height);
   const sorted = receivedData.slice().sort((a, b) => a - b);
   const min = sorted[0];
   const max = sorted[sorted.length - 1];
   const range = max - min;
   ctx.beginPath();
-  for(let i = 0; i < MAX_DATA_POINTS && i < receivedData.length; i++) {
+  for(let i = 0; i < MAX_BITS_DISPLAYED_ON_GRAPH && i < receivedData.length; i++) {
     const value = receivedData[i];
     const y = (1-(value / range)) * height;
     if(i === 0) {
