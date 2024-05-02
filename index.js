@@ -38,7 +38,11 @@ function handleWindowLoad() {
     FREQUENCY_DURATION = parseInt(event.target.value);
     bitSampleCount = 0;
     samplesPerBit.length = 0;
-  })
+  });
+  document.getElementById('amplitude-threshold-text').addEventListener('input', (event) => {
+    FREQUENCY_THRESHOLD = parseInt(event.target.value);
+  });
+  
 
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
