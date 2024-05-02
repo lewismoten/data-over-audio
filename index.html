@@ -16,6 +16,7 @@
         Last Bit Percent: <input id="last-bit-percent" type="number" min="0" max="100" value="90">%<br>
         FFT Size: 2^<input id="fft-size-power-text" type="number" min="5" max="15" value="90"><br>
         Smoothing Time Constant: <input id="smoothing-time-constant-text" type="number" min="0.00" max="1.00" step="0.01" value="0.00"><br>
+        Max Samples on Graph: <input id="max-samples-on-graph" type="number" min="100" max="2000"><br>
         <input type="text" id="text-to-send">
         <button id="send-button">Send</button>
         <h2>Sent</h2>
@@ -28,6 +29,7 @@
         <h2>Received</h2>
         <textarea id="received-data" rows="10" cols="40"></textarea><br />
         Samples Per Bit: <span id="samples-per-bit">0</span><br>
+        Sample Rate: <span id="audio-context-sample-rate">N/A</span> per second.
       </div>
     </div>
     <canvas id="received-graph" width="800" height="100"></canvas>
