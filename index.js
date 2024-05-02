@@ -10,7 +10,7 @@ var receivedDataTextarea;
 var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
-var MAX_DATA_POINTS = 300;
+var MAX_DATA_POINTS = 100;
 var MAX_DATA = 0;
 var pauseTimeoutId;
 
