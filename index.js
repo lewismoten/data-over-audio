@@ -2,6 +2,7 @@ var audioContext;
 var sendButton;
 var textToSend;
 var isListeningCheckbox;
+var samplesPerBitLabel;
 var microphoneStream;
 var microphoneNode;
 var analyser;
@@ -15,10 +16,14 @@ var MAX_DATA_POINTS = 1024;
 var FREQUENCY_TONE = 18000;
 var FREQUENCY_HIGH = 900;
 var FREQUENCY_LOW = 1200;
-var FREQUENCY_DURATION = 800;
-var FREQUENCY_THRESHOLD = 210;
+// 190 = 11.63 samples
+// 180 = 11 samples
+var FREQUENCY_DURATION = 170;
+var FREQUENCY_THRESHOLD = 200;
 var frequencyOverTime = [];
 var bitStart = [];
+var samplesPerBit = [];
+var bitSampleCount = 0;
 
 function handleWindowLoad() {
   // grab dom elements
@@ -28,6 +33,7 @@ function handleWindowLoad() {
   receivedGraph = document.getElementById('received-graph');
   textToSend = document.getElementById('text-to-send');
   sentDataTextArea = document.getElementById('sent-data');
+  samplesPerBitLabel = document.getElementById('samples-per-bit');
 
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
@@ -90,7 +96,7 @@ function handleListeningCheckbox(e) {
     microphoneNode = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
     analyser.smoothingTimeConstant = 0;
-    analyser.fftSize = 2 ** 15;
+    analyser.fftSize = 2 ** 12;
     microphoneNode.connect(analyser);
     requestAnimationFrame(analyzeAudio);
   }
@@ -172,17 +178,22 @@ function evaluateBit(highBits, lowBits) {
 
   var high = canHear(FREQUENCY_HIGH);
   var low = canHear(FREQUENCY_LOW);
+  const now = performance.now();
   if(high || low) {
-    const now = performance.now();
     if(bitStarted) {
       if(now - bitStarted >= FREQUENCY_DURATION) {
+        samplesPerBit.unshift(bitSampleCount)
         received(evaluateBit(bitHighStrength, bitLowStrength));
         bitHighStrength.length = 0;
         bitLowStrength.length = 0;
         bitStarted = now;
         bitStart[0] = true;
+        bitSampleCount = 1;
+      } else {
+        bitSampleCount++;
       }
     } else {
+      bitSampleCount = 1;
       bitStarted = now;
       bitStart[0] = true;
       bitHighStrength.length = 0;
@@ -192,13 +203,29 @@ function evaluateBit(highBits, lowBits) {
     bitLowStrength.push(amplitude(FREQUENCY_LOW));
 } else {
     if(bitStarted) {
+      // was bit long enough?
+      const duration = now - bitStarted;
+      if(duration >= FREQUENCY_DURATION * 0.6) {
+        samplesPerBit.unshift(bitSampleCount)
+        received(evaluateBit(bitHighStrength, bitLowStrength));
+      }
       bitStarted = undefined;
       bitStart[0] = true;
-      received(evaluateBit(bitHighStrength, bitLowStrength));
       received('\n');
     }
   }
+  if(samplesPerBit.length > 1024) {
+    samplesPerBit.length = 1024;
+  }
+
+  samplesPerBitLabel.innerText = avgLabel(samplesPerBit);
   requestAnimationFrame(analyzeAudio);
+}
+
+function avgLabel(array) {
+  const values = array.filter(v => v > 0);
+  if(values.length === 0) return 'N/A';
+  return (values.reduce((t, v) => t + v, 0) / values.length).toFixed(2)
 }
 
 function drawBitStart(ctx, color) {
