@@ -10,16 +10,18 @@ var receivedDataTextarea;
 var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
-var MAX_DATA_POINTS = 1024;
+var MAX_DATA_POINTS = 200;
+var MAX_DATA = 0;
 
 // 20 to 20,000 - human
 var FREQUENCY_TONE = 18000;
-var FREQUENCY_HIGH = 900;
-var FREQUENCY_LOW = 1200;
-// 190 = 11.63 samples
-// 180 = 11 samples
-var FREQUENCY_DURATION = 170;
+var FREQUENCY_HIGH = 400;
+var FREQUENCY_LOW = 500;
+var FREQUENCY_DURATION = 200;
 var FREQUENCY_THRESHOLD = 200;
+var FFT_POWER = 10;
+var LAST_BIT_PERCENT = 0.8;
+var SMOOTHING_TIME_CONSTANT = 0;
 var frequencyOverTime = [];
 var bitStart = [];
 var samplesPerBit = [];
@@ -39,10 +41,34 @@ function handleWindowLoad() {
     bitSampleCount = 0;
     samplesPerBit.length = 0;
   });
+  document.getElementById('amplitude-threshold-text').value = FREQUENCY_THRESHOLD;
+  document.getElementById('frequency-high-text').value = FREQUENCY_HIGH;
+  document.getElementById('frequency-low-text').value = FREQUENCY_LOW;
+  document.getElementById('last-bit-percent').value = Math.floor(LAST_BIT_PERCENT * 100);
+  document.getElementById('fft-size-power-text').value = FFT_POWER;
+  document.getElementById('smoothing-time-constant-text').value = SMOOTHING_TIME_CONSTANT.toFixed(2);
+
   document.getElementById('amplitude-threshold-text').addEventListener('input', (event) => {
     FREQUENCY_THRESHOLD = parseInt(event.target.value);
   });
-  
+  document.getElementById('frequency-high-text').addEventListener('input', (event) => {
+    FREQUENCY_HIGH = parseInt(event.target.value);
+  });
+  document.getElementById('frequency-low-text').addEventListener('input', (event) => {
+    FREQUENCY_LOW = parseInt(event.target.value);
+  });
+  document.getElementById('last-bit-percent').addEventListener('input', (event) => {
+    LAST_BIT_PERCENT = parseInt(event.target.value) / 100;
+  });
+  document.getElementById('fft-size-power-text').addEventListener('input', (event) => {
+    FFT_POWER = parseInt(event.target.value);
+    if(analyser) analyser.fftSize = 2 ** FFT_POWER;
+    frequencyOverTime.length = 0;
+  });
+  document.getElementById('smoothing-time-constant-text').addEventListener('input', event => {
+    SMOOTHING_TIME_CONSTANT = parseFloat(event.target.value);
+    if(analyser) analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
+  });
 
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
@@ -104,8 +130,8 @@ function handleListeningCheckbox(e) {
     microphoneStream = stream;
     microphoneNode = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
-    analyser.smoothingTimeConstant = 0;
-    analyser.fftSize = 2 ** 12;
+    analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
+    analyser.fftSize = 2 ** FFT_POWER;
     microphoneNode.connect(analyser);
     requestAnimationFrame(analyzeAudio);
   }
@@ -158,10 +184,12 @@ function analyzeAudio() {
   const frequencyData = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(frequencyData);
   frequencyOverTime.unshift(frequencyData);
+  const max = frequencyData.reduce((m, v) => m > v ? m : v, 0);
+  if(max > MAX_DATA) MAX_DATA = max;
   bitStart.unshift(false);
-  if(frequencyOverTime.length > 1024) {
-    frequencyOverTime.length = 1024;
-    bitStart.length = 1024;
+  if(frequencyOverTime.length > MAX_DATA_POINTS) {
+    frequencyOverTime.length = MAX_DATA_POINTS;
+    bitStart.length = MAX_DATA_POINTS;
   }
   drawFrequencyData();
 
@@ -214,7 +242,7 @@ function evaluateBit(highBits, lowBits) {
     if(bitStarted) {
       // was bit long enough?
       const duration = now - bitStarted;
-      if(duration >= FREQUENCY_DURATION * 0.6) {
+      if(duration >= FREQUENCY_DURATION * LAST_BIT_PERCENT) {
         samplesPerBit.unshift(bitSampleCount)
         received(evaluateBit(bitHighStrength, bitLowStrength));
       }
@@ -223,8 +251,8 @@ function evaluateBit(highBits, lowBits) {
       received('\n');
     }
   }
-  if(samplesPerBit.length > 1024) {
-    samplesPerBit.length = 1024;
+  if(samplesPerBit.length > MAX_DATA_POINTS) {
+    samplesPerBit.length = MAX_DATA_POINTS;
   }
 
   samplesPerBitLabel.innerText = avgLabel(samplesPerBit);
@@ -239,7 +267,7 @@ function avgLabel(array) {
 
 function drawBitStart(ctx, color) {
   const { width, height } = receivedGraph;
-  const segmentWidth = (1 / 1024) * width;
+  const segmentWidth = (1 / MAX_DATA_POINTS) * width;
   ctx.strokeStyle = color;
   for(let i = 0; i < bitStart.length; i++) {
     if(!bitStart[i]) continue;
@@ -251,7 +279,7 @@ function drawBitStart(ctx, color) {
 }
 function drawFrequency(ctx, hz, color) {
   const { width, height } = receivedGraph;
-  const segmentWidth = (1 / 1024) * width;
+  const segmentWidth = (1 / MAX_DATA_POINTS) * width;
   ctx.strokeStyle = color;
   ctx.beginPath();
   for(let i = 0; i < frequencyOverTime.length; i++) {
@@ -259,7 +287,7 @@ function drawFrequency(ctx, hz, color) {
     var length = (audioContext.sampleRate / analyser.fftSize);
     var index = Math.round(hz / length);
     const amplitude = frequencies[index];
-    const y = (1-(amplitude / 255)) * height;
+    const y = (1-(amplitude / MAX_DATA)) * height;
     if(i === 0) {
       ctx.moveTo(0, y);
     } else {
@@ -275,7 +303,7 @@ function drawFrequencyData() {
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, width, height);
   
-  const thresholdY = (1 - (FREQUENCY_THRESHOLD/255)) * height;
+  const thresholdY = (1 - (FREQUENCY_THRESHOLD/MAX_DATA)) * height;
   ctx.strokeStyle = 'grey';
   ctx.moveTo(0, thresholdY);
   ctx.lineTo(width, thresholdY);
