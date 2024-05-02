@@ -362,14 +362,10 @@ function drawBitStart(ctx, color) {
     ctx.stroke();
   }
 }
-function drawFrequency(ctx, hz, color) {
+function drawFrequencyLineGraph(ctx, hz, color) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
-  const oldest = frequencyOverTime[frequencyOverTime.length -1].time;
   const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
-
-  // console.log(duration, newest-oldest);
-
   ctx.strokeStyle = color;
   ctx.beginPath();
   for(let i = 0; i < frequencyOverTime.length; i++) {
@@ -389,6 +385,37 @@ function drawFrequency(ctx, hz, color) {
   }
   ctx.stroke();
 }
+function drawFrequencyDots(ctx, hz, color) {
+  const { width, height } = receivedGraph;
+  const newest = frequencyOverTime[0].time;
+  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  ctx.strokeStyle = color;
+  
+  const radius = 2;
+  const border = 0.5;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = border;
+  const fullCircle = 2 * Math.PI;
+for(let i = 0; i < frequencyOverTime.length; i++) {
+    const {frequencies, time} = frequencyOverTime[i];
+    if(newest - time > duration) continue;
+    const x = ((newest - time) / duration) * width;
+
+    var length = (audioContext.sampleRate / analyser.fftSize);
+    var index = Math.round(hz / length);
+    const amplitude = frequencies[index];
+    const y = (1-(amplitude / MAX_DATA)) * height;
+
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, fullCircle);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(x, y, radius + border, 0, fullCircle);
+    ctx.stroke();
+  }
+}
 function drawFrequencyData() {
   const ctx = receivedGraph.getContext('2d');
   const { width, height } = receivedGraph;
@@ -403,8 +430,10 @@ function drawFrequencyData() {
   ctx.stroke();
   drawBitStarted(ctx, bitStarted ?? lastBitStarted, bitEnded, 'yellow');
   drawBitStart(ctx, 'green');
-  drawFrequency(ctx, FREQUENCY_HIGH, 'red');
-  drawFrequency(ctx, FREQUENCY_LOW, 'blue');
+  drawFrequencyLineGraph(ctx, FREQUENCY_HIGH, 'red');
+  drawFrequencyLineGraph(ctx, FREQUENCY_LOW, 'blue');
+  drawFrequencyDots(ctx, FREQUENCY_HIGH, 'red');
+  drawFrequencyDots(ctx, FREQUENCY_LOW, 'blue');
 }
 
 function drawReceivedData() {
