@@ -221,6 +221,8 @@ function received(value) {
   receivedDataTextarea.scrollTop = receivedDataTextarea.scrollHeight;
 }
 let bitStarted;
+let lastBitStarted;
+let bitEnded;
 let bitHighStrength = [];
 let bitLowStrength = [];
 let lastBitIndex = 0;
@@ -298,6 +300,8 @@ function evaluateBit(highBits, lowBits) {
         received(evaluateBit(bitHighStrength, bitLowStrength));
       }
       lastBitIndex = 0;
+      lastBitStarted = bitStarted;
+      bitEnded = now;
       bitStarted = undefined;
       bitStart[0] = true;
       received('\n');
@@ -325,6 +329,21 @@ function avgLabel(array) {
   const values = array.filter(v => v > 0);
   if(values.length === 0) return 'N/A';
   return (values.reduce((t, v) => t + v, 0) / values.length).toFixed(2)
+}
+function drawBitStarted(ctx, bitStarted, bitEnded, color) {
+  if(!bitStarted) return;
+  const { width, height } = receivedGraph;
+  const newest = frequencyOverTime[0].time;
+  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  ctx.strokeStyle = color;
+  for(let time = bitStarted; time < newest; time += FREQUENCY_DURATION) {
+    if(time > bitEnded) return;
+    const x = ((newest - time) / duration) * width;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
 }
 
 function drawBitStart(ctx, color) {
@@ -382,6 +401,7 @@ function drawFrequencyData() {
   ctx.moveTo(0, thresholdY);
   ctx.lineTo(width, thresholdY);
   ctx.stroke();
+  drawBitStarted(ctx, bitStarted ?? lastBitStarted, bitEnded, 'yellow');
   drawBitStart(ctx, 'green');
   drawFrequency(ctx, FREQUENCY_HIGH, 'red');
   drawFrequency(ctx, FREQUENCY_LOW, 'blue');
