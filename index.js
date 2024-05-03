@@ -118,7 +118,7 @@ function updateFrequencyResolution() {
 
 function showSpeed() {
   const segmentsPerSecond = 1000 / FREQUENCY_DURATION;
-  const bitsPerSegment = getBitFrequencies().length;
+  const bitsPerSegment = getChannels().length;
   const baud = bitsPerSegment * segmentsPerSecond;
   const bytes = baud / 8;
   document.getElementById('durations-per-second').innerText = segmentsPerSecond.toFixed(2);
@@ -138,46 +138,71 @@ function showSpeed() {
 function getFrequency(bit) {
   return bit ? MAXIMUM_FREQUENCY : MINIMUM_FREQUENCY;
 }
-function getBitFrequencies() {
+function getChannels() {
   var audioContext = getAudioContext();
   const sampleRate = audioContext.sampleRate;
   const fftSize = 2 ** FFT_POWER;
   const frequencyResolution = sampleRate / fftSize;
-  const frequencies = [];
+  const channels = [];
   const pairStep = frequencyResolution * 2 * FREQUENCY_RESOLUTION_MULTIPLIER;
   for(let hz = MINIMUM_FREQUENCY; hz < MAXIMUM_FREQUENCY; hz+= pairStep * 2) {
     const low = hz;
     const high = hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER;
     if(low < MINIMUM_FREQUENCY) continue;
     if(high > MAXIMUM_FREQUENCY) continue;
-    frequencies.push([low, high]);
+    channels.push([low, high]);
   }
-  return frequencies;
+  return channels;
 }
 function sendBits(bits) {
+
+  // display what is being sent
   sentDataTextArea.value += bits.join('') + '\n';
   sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
+
   var audioContext = getAudioContext();
-  var duration = bits.length * FREQUENCY_DURATION;
-  const frequencies = getBitFrequencies();
+  const channels = getChannels();
   const oscillators = [];
-  for(let j = 0; j < frequencies.length; j++) {
+  const channelCount = channels.length;
+  var duration = Math.ceil(bits.length / channelCount) * FREQUENCY_DURATION;
+
+  // create our oscillators
+  for(let i = 0; i < channelCount; i++) {
     var oscillator = audioContext.createOscillator();
-    const [low, high] = frequencies[j];
-    for(let i = 0; i < bits.length; i++) {
-      if(i > 0 && bits[i] === bits[i-1]) continue;
-      var offset = ((i * FREQUENCY_DURATION)/1000);
-      oscillator.frequency.setValueAtTime(
-        bits[i] ? high : low,
-        audioContext.currentTime + offset
-      );
-    }
     oscillator.connect(audioContext.destination);
     oscillators.push(oscillator);
   }
 
+  // change our channel frequencies for the bit
+  for(let i = 0; i < bits.length; i++) {
+    const isHigh = bits[i];
+    const channel = i % channelCount;
+    const segment = Math.floor(i / channelCount);
+    var offset = ((segment * FREQUENCY_DURATION)/1000);
+    oscillators[channel].frequency.setValueAtTime(
+      channels[channel][isHigh ? 1 : 0],
+      audioContext.currentTime + offset
+    );
+  }
+
+  // silence oscillators after signal completes
+  for(let i = bits.length; i < bits.length + channelCount; i++) {
+    const channel = i % channelCount;
+    const segment = Math.floor(i / channelCount);
+    const offset = ((segment * FREQUENCY_DURATION) / 1000);
+    oscillators[channel].frequency.setValueAtTime(
+      0,
+      audioContext.currentTime + offset
+    );
+  }
+
+  // start the graph moving again
   resumeGraph();
+
+  // start sending our signal
   oscillators.forEach(o => o.start());
+
+  // stop the oscillators after it the data has been sent.
   window.setTimeout(function() {
     oscillators.forEach(o => o.stop());
   }, duration);
@@ -216,7 +241,7 @@ function collectSample() {
   analyser.getByteFrequencyData(frequencies);
   const data = { time, frequencies, length };
   let hasSignal = false;
-  data.pairs = getBitFrequencies().map(([low, high], i) => {
+  data.pairs = getChannels().map(([low, high], i) => {
     const lowAmp = frequencies[Math.round(low / length)];
     const highAmp = frequencies[Math.round(high / length)];
     const isLow = lowAmp > FREQUENCY_THRESHOLD;
@@ -544,7 +569,7 @@ function drawFrequencyData() {
   ctx.stroke();
   drawBitDurationLines(ctx, 'yellow');
   drawBitStart(ctx, 'green');
-  const frequencies = getBitFrequencies();
+  const frequencies = getChannels();
   // frequencies.forEach(([low, high]) => {
   //   drawFrequencyDots(ctx, high, 'red');
   //   drawFrequencyDots(ctx, low, 'blue');
