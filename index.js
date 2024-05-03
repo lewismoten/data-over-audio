@@ -33,6 +33,7 @@ var samplesPerBit = [];
 var bitSampleCount = 0;
 var PAUSE = false;
 var PAUSE_AFTER_END = true;
+var PACKET_SIZE_BITS = 10;
 
 function handleWindowLoad() {
   // grab dom elements
@@ -156,11 +157,32 @@ function getChannels() {
   }
   return channels;
 }
-function sendBits(bits) {
-
+function logSent(text) {
   // display what is being sent
-  sentDataTextArea.value += bits.join('') + '\n';
+  sentDataTextArea.value += text + '\n';
   sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
+}
+function sendBits(bits) {
+  const byteCount = bits.length / 8;
+  if(bits.length === 0) {
+    logSent('No bits to send!');
+    return;
+  } else if(bits.length % 8 !== 0 || bits.length === 0) {
+    logSent('Bit count must be divisible by 8.');
+    return;
+  } else if(byteCount > (1 << PACKET_SIZE_BITS)) {
+    logSent(`Can not transfer more than ${(1 << PACKET_SIZE_BITS)} bytes.`);
+    return;
+  } else {
+    logSent(bits.join(''));
+  }
+
+  const packetLength = ((byteCount - 1) >>> 0)
+    .toString(2)
+    .padStart(PACKET_SIZE_BITS, '0')
+    .split('')
+    .map(Number);
+  bits.unshift(...packetLength);
 
   var audioContext = getAudioContext();
   const channels = getChannels();
@@ -316,7 +338,7 @@ function processBitsReceived() {
   bits.forEach(({pairs}) => {
     pairs.forEach(({ isHigh, isMissing }, i) => {
       if(isHigh) channels[i].isHigh ++;
-      else if(isMissing) channels[i].isMissing ++;
+      // else if(isMissing) channels[i].isMissing ++;
       else channels[i].isLow++;
     })
   });
