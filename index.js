@@ -133,14 +133,6 @@ function showSpeed() {
   document.getElementById('data-transfer-speed-bytes-per-second').innerText = bytes.toFixed(2);
 }
 
-// function handleTextToSendKeypress(event) {
-//   var keyCode = event.which || event.keyCode;
-//   var bits = keyCode.toString(2)
-//     .padStart(8, '0')
-//     .split('')
-//     .map(Number);
-//   sendBits(bits);
-// }
 function getFrequency(bit) {
   return bit ? MAXIMUM_FREQUENCY : MINIMUM_FREQUENCY;
 }
