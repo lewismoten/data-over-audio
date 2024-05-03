@@ -14,6 +14,7 @@ var MAX_BITS_DISPLAYED_ON_GRAPH = 9;
 var MAX_DATA = 300;
 var pauseTimeoutId;
 var sampleIntervalId;
+var HAMMING_ERROR_CORRECTION = true;
 
 // 20 to 20,000 - human
 var TEXT_TO_SEND = "Hello World!";
@@ -36,6 +37,7 @@ var PAUSE_AFTER_END = true;
 var PACKET_SIZE_BITS = 10;
 
 const packetBits = [];
+const packetDecodedBits = [];
 let packetDataByteCount = -1;
 
 function handleWindowLoad() {
@@ -49,6 +51,11 @@ function handleWindowLoad() {
   sentDataTextArea = document.getElementById('sent-data');
   samplesPerBitLabel = document.getElementById('samples-per-bit');
   document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
+  document.getElementById('error-correction-hamming').checked = HAMMING_ERROR_CORRECTION;
+  document.getElementById('error-correction-hamming').addEventListener('change', event => {
+    HAMMING_ERROR_CORRECTION = event.target.checked;
+    showSpeed();
+  })
   document.getElementById('pause-after-end').addEventListener('change', event => {
     PAUSE_AFTER_END = event.target.checked;
     if(!PAUSE_AFTER_END) resumeGraph();
@@ -131,6 +138,47 @@ function showSpeed() {
   document.getElementById('bits-per-duration').innerText = bitsPerSegment;
   document.getElementById('data-transfer-speed-bits-per-second').innerText = baud.toFixed(2);
   document.getElementById('data-transfer-speed-bytes-per-second').innerText = bytes.toFixed(2);
+  if(HAMMING_ERROR_CORRECTION) {
+    const effectiveBaud = baud * 4 / 7;
+    const effectiveBytes = effectiveBaud / 8;
+    document.getElementById('effective-speed-bits-per-second').innerText = effectiveBaud.toFixed(2);
+    document.getElementById('effective-speed-bytes-per-second').innerText = effectiveBytes.toFixed(2);
+  } else {
+    const effectiveBaud = baud;
+    const effectiveBytes = effectiveBaud / 8;
+    document.getElementById('effective-speed-bits-per-second').innerText = effectiveBaud.toFixed(2);
+    document.getElementById('effective-speed-bytes-per-second').innerText = effectiveBytes.toFixed(2);
+  }
+}
+function nibbleToHamming(nibble) {
+  if(nibble.length !== 4) return [];
+  return [
+    nibble[0] ^ nibble[1] ^ nibble[3],
+    nibble[0] ^ nibble[2] ^ nibble[3],
+    nibble[0],
+    nibble[1] ^ nibble[2] ^ nibble[3],
+    nibble[1],
+    nibble[2],
+    nibble[3]
+  ]
+}
+function hammingToNibble(hamming) {
+  if(hamming.length !== 7) return [];
+  const error_1 = hamming[0] ^ hamming[2] ^ hamming[4] ^ hamming[6];
+  const error_2 = hamming[1] ^ hamming[2] ^ hamming[5] ^ hamming[6];
+  const error_3 = hamming[3] ^ hamming[4] ^ hamming[5] ^ hamming[6];
+  let error = (error_3 << 2) | (error_2 << 1) | error_1;
+  if(error !== 0) {
+    // don't mutate the array
+    hamming = hamming.slice();
+    hamming[error - 1] ^= 1; // flip
+  }
+  return [
+    hamming[2],
+    hamming[4],
+    hamming[5],
+    hamming[6]
+  ];
 }
 
 function getFrequency(bit) {
@@ -175,9 +223,19 @@ function sendBits(bits) {
     .padStart(PACKET_SIZE_BITS, '0')
     .split('')
     .map(Number);
+
   bits.unshift(...packetLength);
   logSent(bits.join(''));
 
+  if(HAMMING_ERROR_CORRECTION) {
+    const encodedBits = [];
+    for(let i = 0; i < bits.length; i+= 4) {
+      const nibble = bits.slice(i, i + 4);
+      while(nibble.length < 4) nibble.push(0);
+      encodedBits.push(...nibbleToHamming(bits.slice(i, i + 4)));
+    }
+    bits = encodedBits;
+  }
   var audioContext = getAudioContext();
   const channels = getChannels();
   const oscillators = [];
@@ -387,21 +445,36 @@ function processSegmentReceived() {
 
   packetBits.push(...bitValues);
 
-  if(packetBits.length >= 10) {
+  const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
+  if(HAMMING_ERROR_CORRECTION) {
+    packetDecodedBits.length = 0;
+    for(let i = 0; i < packetBits.length; i += 7) {
+      const hamming = packetBits.slice(i, i + 7);
+      const nibble = hammingToNibble(hamming);
+      packetDecodedBits.push(...nibble);
+      console.log(i, hamming, nibble);
+    }
+  } else {
+    packetDecodedBits = packetBits;
+  }
+
+  if(packetDecodedBits.length >= 10) {
     // we can evaluate how many bytes are comming
-    const dataLengthIndex = Math.floor(10 / channelCount);
+    const encodedBitsNeeded = Math.ceil(10 * encodingRatio);
+    const dataLengthIndex = Math.floor(encodedBitsNeeded / channelCount);
     if(dataLengthIndex === segmentIndex) {
       // we just got the bits we needed
-      packetDataByteCount = 1 + packetBits
+      packetDataByteCount = 1 + packetDecodedBits
         .slice(0, PACKET_SIZE_BITS)
         .reduce((value, bit) => (value << 1) | bit);
+      document.getElementById('decoded-byte-count').innerText = packetDataByteCount;
       // let's get the end time
-      const totalBits = (packetDataByteCount * 8) + PACKET_SIZE_BITS;
+      const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
       const segments = Math.ceil(totalBits / channelCount);
       const duration = segments * FREQUENCY_DURATION;
       const streamEnded = streamStarted + duration;
       console.log({
-        tenBitNum: packetBits
+        tenBitNum: packetDecodedBits
         .slice(0, PACKET_SIZE_BITS).join(''),
         packetDataByteCount,
         PACKET_SIZE_BITS,
@@ -419,7 +492,7 @@ function processSegmentReceived() {
         });
     }
     // remove phantom bits
-    const totalBits = (packetDataByteCount * 8) + PACKET_SIZE_BITS;
+    const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
     if(packetBits.length > totalBits) {
       const excess = packetBits.length % totalBits;
       packetBits.length = totalBits;
@@ -427,7 +500,15 @@ function processSegmentReceived() {
     }
   }
 
-  received(bitValues.join('') + '\n');
+  document.getElementById('decoded-data').value = packetDecodedBits.reduce((all, bit, i) => {
+    if(i !== 0 && i % 8 === 0) return all + ' ' + bit;
+    return all + bit;
+  }, '');
+  document.getElementById('received-data').value = packetBits.reduce((all, bit, i) => {
+    if(i !== 0 && i % 8 === 0) return all + ' ' + bit;
+    return all + bit;
+  }, '');
+ 
 }
 function resetGraphData() {
   frequencyOverTime.length = 0;
