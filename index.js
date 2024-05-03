@@ -16,7 +16,6 @@ var pauseTimeoutId;
 var sampleIntervalId;
 
 // 20 to 20,000 - human
-var FREQUENCY_TONE = 18000;
 var MINIMUM_FREQUENCY = 5000;
 var MAXIMUM_FREQUENCY = 10000;
 var FREQUENCY_DURATION = 100;
@@ -102,7 +101,7 @@ function handleWindowLoad() {
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
   isListeningCheckbox.addEventListener('click', handleListeningCheckbox);
-  textToSend.addEventListener('keypress', handleTextToSendKeypress);
+  // textToSend.addEventListener('keypress', handleTextToSendKeypress);
   showSpeed();
 }
 
@@ -128,14 +127,14 @@ function showSpeed() {
   document.getElementById('data-transfer-speed-bytes-per-second').innerText = bytes.toFixed(2);
 }
 
-function handleTextToSendKeypress(event) {
-  var keyCode = event.which || event.keyCode;
-  var bits = keyCode.toString(2)
-    .padStart(8, '0')
-    .split('')
-    .map(Number);
-  sendBits(bits);
-}
+// function handleTextToSendKeypress(event) {
+//   var keyCode = event.which || event.keyCode;
+//   var bits = keyCode.toString(2)
+//     .padStart(8, '0')
+//     .split('')
+//     .map(Number);
+//   sendBits(bits);
+// }
 function getFrequency(bit) {
   return bit ? MAXIMUM_FREQUENCY : MINIMUM_FREQUENCY;
 }
@@ -330,14 +329,18 @@ function getAudioContext() {
   return audioContext;
 }
 
+function textToBits(text) {
+  const bits = [];
+  for(let i = 0; i < text.length; i++) {
+    // const unicode = text.codePointAt(i).toString(2).padStart(16, '0');
+    const ascii = text[i].charCodeAt(0).toString(2).padStart(8, '0');
+    bits.push(ascii);
+  }
+  return bits.join('').split('').map(Number);
+}
 function handleSendButtonClick() {
-  var audioContext = getAudioContext();
-  var oscillator = audioContext.createOscillator();
-  oscillator.frequency.setValueAtTime(FREQUENCY_TONE, audioContext.currentTime);
-  oscillator.connect(audioContext.destination);
-  oscillator.start();
-  window.setTimeout(function() { oscillator.stop(); }, 500);
-
+  const text = document.getElementById('text-to-send').value;
+  sendBits(textToBits(text));
 }
 function handleListeningCheckbox(e) {
   stopGraph();
