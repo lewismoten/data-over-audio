@@ -21,7 +21,7 @@ var FREQUENCY_HIGH = 400;
 var FREQUENCY_LOW = 500;
 var FREQUENCY_DURATION = 100;
 var FREQUENCY_THRESHOLD = 200;
-var SAMPLE_DELAY_MS = 10;
+var SAMPLE_DELAY_MS = 1;
 var FFT_POWER = 10;
 var LAST_BIT_PERCENT = 0.8;
 var SMOOTHING_TIME_CONSTANT = 0;
@@ -50,6 +50,7 @@ function handleWindowLoad() {
     FREQUENCY_DURATION = parseInt(event.target.value);
     bitSampleCount = 0;
     samplesPerBit.length = 0;
+    showSpeed();
   });
   document.getElementById('max-bits-displayed-on-graph').value= MAX_BITS_DISPLAYED_ON_GRAPH;
   document.getElementById('max-bits-displayed-on-graph').addEventListener('input', (event) => {
@@ -89,6 +90,14 @@ function handleWindowLoad() {
   sendButton.addEventListener('click', handleSendButtonClick);
   isListeningCheckbox.addEventListener('click', handleListeningCheckbox);
   textToSend.addEventListener('keypress', handleTextToSendKeypress);
+  showSpeed();
+}
+
+function showSpeed() {
+  const baud = 1000 / FREQUENCY_DURATION;
+  const bytes = baud / 8;
+  document.getElementById('data-transfer-speed-bits-per-second').innerText = baud.toFixed(2);
+  document.getElementById('data-transfer-speed-bytes-per-second').innerText = bytes.toFixed(2);
 }
 
 function handleTextToSendKeypress(event) {
