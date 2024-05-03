@@ -79,10 +79,10 @@ function handleWindowLoad() {
   document.getElementById('fft-size-power-text').addEventListener('input', (event) => {
     FFT_POWER = parseInt(event.target.value);
     if(analyser) analyser.fftSize = 2 ** FFT_POWER;
-    document.getElementById('frequency-resolution').innerText = (getAudioContext().sampleRate / 2 ** FFT_POWER).toFixed(2);
+    updateFrequencyResolution();
     resetGraphData();
   });
-  document.getElementById('frequency-resolution').innerText = (getAudioContext().sampleRate / 2 ** FFT_POWER).toFixed(2);
+  updateFrequencyResolution();
   document.getElementById('smoothing-time-constant-text').addEventListener('input', event => {
     SMOOTHING_TIME_CONSTANT = parseFloat(event.target.value);
     if(analyser) analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
@@ -93,6 +93,15 @@ function handleWindowLoad() {
   isListeningCheckbox.addEventListener('click', handleListeningCheckbox);
   textToSend.addEventListener('keypress', handleTextToSendKeypress);
   showSpeed();
+}
+
+function updateFrequencyResolution() {
+  const sampleRate = getAudioContext().sampleRate;
+  const fftSize = 2 ** FFT_POWER;
+  const frequencyResolution = sampleRate / fftSize;
+  const frequencyCount = (sampleRate/2) / frequencyResolution;
+  document.getElementById('frequency-resolution').innerText = frequencyResolution.toFixed(2);
+  document.getElementById('frequency-count').innerText = frequencyCount.toFixed(2);
 }
 
 function showSpeed() {
