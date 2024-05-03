@@ -9,14 +9,15 @@
     <h1>Data Over Audio</h1>
     <div class="panels">
       <div>
-        Bit Duration: <input id="bit-duration-text" type="number" min="0" max="1000" value="190">ms<br>
-        Amplitude Threshold: <input id="amplitude-threshold-text" type="number" min="0" max="255" value="200"><br>
-        Frequency High: <input id="frequency-high-text" type="number" min="20" max="20000" value="900"><br>
-        Frequency Low: <input id="frequency-low-text" type="number" min="20" max="20000" value="1200"><br>
-        Last Bit Percent: <input id="last-bit-percent" type="number" min="0" max="100" value="90">%<br>
+        Segment Duration: <input id="bit-duration-text" type="number" min="0" max="1000" value="190">ms<br>
+        Amplitude Threshold: <input id="amplitude-threshold-text" type="number" min="0" max="100" value="75"><br>
+        Minimum Frequency: <input id="minimum-frequency" type="number" min="20" max="20000" value="900"><br>
+        Maximum Frequency: <input id="maximum-frequency" type="number" min="20" max="20000" value="1200"><br>
+        Last Segment Percent: <input id="last-bit-percent" type="number" min="0" max="100" value="90">%<br>
         FFT Size: 2^<input id="fft-size-power-text" type="number" min="5" max="15" value="90"><br>
         Frequency Resolution: <span id="frequency-resolution">N/A</span><br>
         Frequency Count: <span id="frequency-count">N/A</span><br>
+        Frequency Resolution Multiplier: <input id="frequency-resolution-multiplier" type="number" min="1" max="10" value="2"><br >
         Smoothing Time Constant: <input id="smoothing-time-constant-text" type="number" min="0.00" max="1.00" step="0.01" value="0.00"><br>
         <input type="text" id="text-to-send">
         <button id="send-button">Send</button>
@@ -31,6 +32,8 @@
         <textarea id="received-data" rows="10" cols="40"></textarea><br />
         Samples Per Bit: <span id="samples-per-bit">0</span><br>
         Sample Rate: <span id="audio-context-sample-rate">N/A</span> per second.<br />
+        Segments per second: <span id="durations-per-second">N/A</span><br />
+        Bits per segment: <span id="bits-per-duration">N/A</span><br />
         Speed: <span id="data-transfer-speed-bits-per-second">N/A</span> Baud<br>
         <span id="data-transfer-speed-bytes-per-second">N/A</span> Bytes/second<br />
       </div>
