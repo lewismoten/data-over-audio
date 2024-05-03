@@ -10,15 +10,16 @@ var receivedDataTextarea;
 var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
-var MAX_BITS_DISPLAYED_ON_GRAPH = 11;
+var MAX_BITS_DISPLAYED_ON_GRAPH = 9;
 var MAX_DATA = 300;
 var pauseTimeoutId;
 var sampleIntervalId;
 
 // 20 to 20,000 - human
+var TEXT_TO_SEND = "Hello World!";
 var MINIMUM_FREQUENCY = 5000;
 var MAXIMUM_FREQUENCY = 10000;
-var FREQUENCY_DURATION = 100;
+var FREQUENCY_DURATION = 60;
 var FREQUENCY_THRESHOLD_PERCENT = .75;
 var FREQUENCY_THRESHOLD = 150;
 var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
@@ -40,6 +41,7 @@ function handleWindowLoad() {
   receivedDataTextarea = document.getElementById('received-data');
   receivedGraph = document.getElementById('received-graph');
   textToSend = document.getElementById('text-to-send');
+  textToSend.value = TEXT_TO_SEND;
   sentDataTextArea = document.getElementById('sent-data');
   samplesPerBitLabel = document.getElementById('samples-per-bit');
   document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
@@ -164,7 +166,8 @@ function sendBits(bits) {
   const channels = getChannels();
   const oscillators = [];
   const channelCount = channels.length;
-  var duration = Math.ceil(bits.length / channelCount) * FREQUENCY_DURATION;
+
+  const currentTime = audioContext.currentTime + 0.1;
 
   // create our oscillators
   for(let i = 0; i < channelCount; i++) {
@@ -181,31 +184,23 @@ function sendBits(bits) {
     var offset = ((segment * FREQUENCY_DURATION)/1000);
     oscillators[channel].frequency.setValueAtTime(
       channels[channel][isHigh ? 1 : 0],
-      audioContext.currentTime + offset
+      currentTime + offset
     );
   }
 
-  // silence oscillators after signal completes
+  // start sending our signal
+  oscillators.forEach(o => o.start(currentTime));
+
+  // silence oscillators when done
   for(let i = bits.length; i < bits.length + channelCount; i++) {
     const channel = i % channelCount;
     const segment = Math.floor(i / channelCount);
     const offset = ((segment * FREQUENCY_DURATION) / 1000);
-    oscillators[channel].frequency.setValueAtTime(
-      0,
-      audioContext.currentTime + offset
-    );
+    oscillators[channel].stop(currentTime + offset);
   }
 
   // start the graph moving again
   resumeGraph();
-
-  // start sending our signal
-  oscillators.forEach(o => o.start());
-
-  // stop the oscillators after it the data has been sent.
-  window.setTimeout(function() {
-    oscillators.forEach(o => o.stop());
-  }, duration);
 }
 function stopGraph() {
   PAUSE = true;
@@ -251,6 +246,7 @@ function collectSample() {
       channel: i,
       lowHz: low,
       highHz: high,
+      isMissing: !(isHigh || isLow),
       isHigh: (isHigh && !isLow) || highAmp > lowAmp
     };
   });
@@ -315,15 +311,19 @@ function processBitsReceived() {
     return;
   }
 
-  const channels = new Array(channelCount).fill(0);
-  const maxHighBits = bits.reduce((max, { pairs: { length } }) => max > length ? max : length, 0);
+  const channels = new Array(channelCount).fill(0).map(() => ({isHigh: 0, isLow: 0, isMissing: 0}));
 
   bits.forEach(({pairs}) => {
-    pairs.forEach(({ isHigh }, i) => {
-      if(isHigh) channels[i]++;
+    pairs.forEach(({ isHigh, isMissing }, i) => {
+      if(isHigh) channels[i].isHigh ++;
+      else if(isMissing) channels[i].isMissing ++;
+      else channels[i].isLow++;
     })
   });
-  const bitString = channels.map(count => count >= (maxHighBits / 2) ? '1' : '0').join('');
+  const bitString = channels.map(({isHigh, isLow, isMissing}) => {
+    if(isMissing > isHigh + isLow) return '.';
+    return isHigh > isLow ? '1' : '0';
+  }).join('');
   received(bitString + '\n');
 }
 function resetGraphData() {
@@ -570,13 +570,14 @@ function drawFrequencyData() {
   drawBitDurationLines(ctx, 'yellow');
   drawBitStart(ctx, 'green');
   const frequencies = getChannels();
-  // frequencies.forEach(([low, high]) => {
-  //   drawFrequencyDots(ctx, high, 'red');
-  //   drawFrequencyDots(ctx, low, 'blue');
-  // });
-  frequencies.forEach(([low, high]) => {
-    drawFrequencyLineGraph(ctx, high, 'red');
-    drawFrequencyLineGraph(ctx, low, 'blue');
+  frequencies.forEach(([low, high], i) => {
+    if(i >= frequencies.length - 1) {
+      drawFrequencyLineGraph(ctx, high, 'pink');
+      drawFrequencyLineGraph(ctx, low, 'cyan');
+    } else {
+      drawFrequencyLineGraph(ctx, high, 'rgba(255, 0, 0, .5)');
+      drawFrequencyLineGraph(ctx, low, 'rgba(0, 0, 255, .5)');
+    }
   });
 
   requestAnimationFrame(drawFrequencyData);
