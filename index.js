@@ -79,8 +79,10 @@ function handleWindowLoad() {
   document.getElementById('fft-size-power-text').addEventListener('input', (event) => {
     FFT_POWER = parseInt(event.target.value);
     if(analyser) analyser.fftSize = 2 ** FFT_POWER;
+    document.getElementById('frequency-resolution').innerText = (getAudioContext().sampleRate / 2 ** FFT_POWER).toFixed(2);
     resetGraphData();
   });
+  document.getElementById('frequency-resolution').innerText = (getAudioContext().sampleRate / 2 ** FFT_POWER).toFixed(2);
   document.getElementById('smoothing-time-constant-text').addEventListener('input', event => {
     SMOOTHING_TIME_CONSTANT = parseFloat(event.target.value);
     if(analyser) analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
