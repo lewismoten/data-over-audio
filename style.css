@@ -18,7 +18,7 @@ body {
   border-bottom: 4px solid darkolivegreen;
   color: black;
 }
-#received-graph {
+canvas {
   background-color: black;
 }
 textarea, .raw-data {

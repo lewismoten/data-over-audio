@@ -188,6 +188,65 @@ function showSpeed() {
     channelList.appendChild(li);
   })
   handleTextToSendInput();
+  drawChannels();
+}
+function drawChannels() {
+  const sampleRate = getAudioContext().sampleRate;
+  const fftSize = 2 ** FFT_POWER;
+  const frequencyResolution = sampleRate / fftSize;
+  //const frequencyCount = (sampleRate/2) / frequencyResolution;
+  const channels = getChannels();
+  const channelCount = channels.length;
+  const canvas = document.getElementById('channel-frequency-graph');
+  const ctx = canvas.getContext('2d');
+  const {height, width} = canvas;
+  const channelHeight = height / channelCount;
+  const bandHeight = channelHeight / 2;
+
+  const nyquistFrequency = audioContext.sampleRate / 2;
+  const frequencySegments = Math.floor(nyquistFrequency / frequencyResolution);
+
+  for(let i = 0; i < channelCount; i++) {//xxx
+    const [low, high] = channels[i];
+    let top = channelHeight * i;
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, top, width, bandHeight);
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, top + bandHeight, width, bandHeight);
+
+    const lowX = percentInFrequency(low, frequencyResolution) * width;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'blue';
+    ctx.beginPath();
+    ctx.moveTo(lowX, top);
+    ctx.lineTo(lowX, top + bandHeight);
+    ctx.stroke();
+  
+    const highX = percentInFrequency(high, frequencyResolution) * width;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'blue';
+    ctx.beginPath();
+    ctx.moveTo(highX, top + bandHeight);
+    ctx.lineTo(highX, top + (bandHeight * 2));
+    ctx.stroke();
+
+  }
+/*
+  const binWidth = (1 / frequencySegments) * width;
+  for(let x = 0; x < width; x+= binWidth * 2) {
+    console.log(x);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(x, 0, binWidth, height);
+  }
+  */
+}
+
+function percentInFrequency(hz, frequencyResolution) {
+  const index = Math.floor(hz/frequencyResolution);
+  const startHz = index * frequencyResolution;
+  const hzInSegement = hz - startHz;
+  const percent = hzInSegement / frequencyResolution;
+  return percent;
 }
 function nibbleToHamming(nibble) {
   if(nibble.length !== 4) return [];
