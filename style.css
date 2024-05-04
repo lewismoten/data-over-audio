@@ -38,3 +38,13 @@ textarea, .raw-data {
 .bit-unexpected {
   color: green;
 }
+ol {
+  overflow: auto;
+  height: 75px;
+  background-color: rgb(41, 59, 10);
+  color: rgb(75, 185, 75);
+  border: 1px solid grey;
+  font-size: x-small;
+  font-family: monospace;
+  width: 250px;
+}

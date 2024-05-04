@@ -160,7 +160,8 @@ function updateFrequencyResolution() {
 
 function showSpeed() {
   const segmentsPerSecond = 1000 / FREQUENCY_DURATION;
-  const bitsPerSegment = getChannels().length;
+  const channels = getChannels();
+  const bitsPerSegment = channels.length;
   const baud = bitsPerSegment * segmentsPerSecond;
   const bytes = baud / 8;
   document.getElementById('durations-per-second').innerText = segmentsPerSecond.toFixed(2);
@@ -178,6 +179,14 @@ function showSpeed() {
     document.getElementById('effective-speed-bits-per-second').innerText = effectiveBaud.toFixed(2);
     document.getElementById('effective-speed-bytes-per-second').innerText = effectiveBytes.toFixed(2);
   }
+
+  const channelList = document.getElementById('channel-list');
+  channelList.innerHTML = "";
+  channels.forEach(([low, high]) => {
+    const li = document.createElement('li');
+    li.textContent = `Low: ${low} Hz High: ${high} Hz`;
+    channelList.appendChild(li);
+  })
   handleTextToSendInput();
 }
 function nibbleToHamming(nibble) {
@@ -221,9 +230,9 @@ function getChannels() {
   const frequencyResolution = sampleRate / fftSize;
   const channels = [];
   const pairStep = frequencyResolution * 2 * FREQUENCY_RESOLUTION_MULTIPLIER;
-  for(let hz = MINIMUM_FREQUENCY; hz < MAXIMUM_FREQUENCY; hz+= pairStep * 2) {
-    const low = hz;
-    const high = hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER;
+  for(let hz = MINIMUM_FREQUENCY; hz < MAXIMUM_FREQUENCY; hz+= pairStep) {
+    const low = Math.floor(hz);
+    const high = Math.floor(hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER);
     if(low < MINIMUM_FREQUENCY) continue;
     if(high > MAXIMUM_FREQUENCY) continue;
     channels.push([low, high]);
