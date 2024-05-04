@@ -445,6 +445,8 @@ function collectSample() {
       channel: i,
       lowHz: low,
       highHz: high,
+      lowAmp,
+      highAmp,
       isMissing: !(isHigh || isLow),
       isHigh: (isHigh && !isLow) || highAmp > lowAmp
     };
@@ -506,11 +508,11 @@ function evaluateBit(samples, segment, channel) {
     return sample.time >= started + (segment * FREQUENCY_DURATION) && 
       sample.time < started + ((segment + 1) * FREQUENCY_DURATION)
   }).map(samples => samples.pairs[channel])
-  .reduce((bitSamples, { isHigh, isMissing }) => {
-    bitSamples.total++;
-    if(isHigh) bitSamples.highCount++;
-  }, {highCount: 0, total: 0});  
-  return bitSamples.highCount >= bitSamples.total / 2 ? 1 : 0;
+  .reduce((bitSamples, { lowAmp, highAmp }) => {
+    bitSamples.high += highAmp;
+    bitSamples.low += lowAmp;
+  }, {high: 0, low: 0});  
+  return bitSamples.high >= bitSamples.low ? 1 : 0;
 }
 
 function processSegmentReceived() {
@@ -533,18 +535,18 @@ function processSegmentReceived() {
   //   return;
   // }
 
-  const channels = new Array(channelCount).fill(0).map(() => ({isHigh: 0, isLow: 0, isMissing: 0}));
+  const channels = new Array(channelCount).fill(0).map(() => ({highAmp: 0, lowAmp: 0, isMissing: 0}));
 
   bits.forEach(({pairs}) => {
-    pairs.forEach(({ isHigh, isMissing }, i) => {
-      if(isHigh) channels[i].isHigh ++;
+
+    pairs.forEach(({ highAmp, lowAmp, isMissing }, i) => {
+      channels[i].highAmp += highAmp;
+      channels[i].lowAmp += lowAmp;
       // else if(isMissing) channels[i].isMissing ++;
-      else channels[i].isLow++;
     })
   });
-  const bitValues = channels.map(({isHigh, isLow, isMissing}) => {
-    if(isMissing > isHigh + isLow) return '.';
-    return isHigh > isLow ? 1 : 0;
+  const bitValues = channels.map(({highAmp, lowAmp, isMissing}) => {
+    return highAmp >= lowAmp ? 1 : 0;
   });
 
   packetBits.push(...bitValues);
