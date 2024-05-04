@@ -11,55 +11,83 @@
   <h1>Data Over Audio</h1>
   <div class="panels">
     <div>
-      Segment Duration: <input id="bit-duration-text" type="number" min="0" max="1000" value="190">ms<br>
-      Amplitude Threshold: <input id="amplitude-threshold-text" type="number" min="0" max="100" value="75"><br>
-      Minimum Frequency: <input id="minimum-frequency" type="number" min="20" max="20000" value="900"><br>
-      Maximum Frequency: <input id="maximum-frequency" type="number" min="20" max="20000" value="1200"><br>
-      Last Segment Percent: <input id="last-bit-percent" type="number" min="0" max="100" value="90">%<br>
-      FFT Size: 2^<input id="fft-size-power-text" type="number" min="5" max="15" value="90"><br>
-      Frequency Resolution: <span id="frequency-resolution">N/A</span><br>
-      Frequency Count: <span id="frequency-count">N/A</span><br>
-      Frequency Resolution Multiplier: <input id="frequency-resolution-multiplier" type="number" min="1" max="10"
-        value="2"><br>
-      Smoothing Time Constant: <input id="smoothing-time-constant-text" type="number" min="0.00" max="1.00" step="0.01"
-        value="0.00"><br>
-      <label>
-        <input type="checkbox" id="error-correction-hamming" checked>Hamming Code Error Correction
-      </label><br>
+      <h2>Message</h2>
       <input type="text" id="text-to-send">
-      <button id="send-button">Send</button>
-      <h2>Sent</h2>
+      <button id="send-button">Send</button><br />
       <textarea id="sent-data" rows="10" cols="40"></textarea><br />
+    </div>
+    <div>
+      <h2>Encoded</h2>
+      <textarea id="encoded-data" rows="10" cols="40"></textarea><br />
     </div>
     <div>
       <label>
         <input type="checkbox" id="is-listening-checkbox">Listening
       </label>
       <h2>Received</h2>
-      <textarea id="received-data" rows="10" cols="40"></textarea><br />
+      <div class="raw-data" id="received-data"></div><br />
+      Error Percent: <span id="received-data-error-percent">N/A</span>%
+    </div>
+    <div>
+        <h2>Decoded</h2>
+        <div class="raw-data" id="decoded-data"></div><br />
+        Error Percent: <span id="decoded-data-error-percent">N/A</span>%<br />
+        Data Byte Count: <span id="decoded-byte-count">N/A</span><br />
+    </div>
+    <div>
+      <h2>Decoded Text</h2>
+      <div class="raw-data" id="decoded-text"></div><br />
+  </div>
+  <div>
+      <h2>Frequency Graph</h2>
+      <canvas id="received-graph" width="800" height="150"></canvas><br>
+      <label>
+        <input type="checkbox" id="pause-after-end" checked>Pause after end
+      </label><br>
+      Max Segments Displayed: <input id="max-bits-displayed-on-graph" type="number" min="1" max="2000"><br>
+    </div>
+    <div>
+      <h2>Configuration</h2>
+      Segment Duration: <input id="bit-duration-text" type="number" min="0" max="1000" value="190">ms<br>
+      Amplitude Threshold: <input id="amplitude-threshold-text" type="number" min="0" max="100" value="75"><br>
+      Minimum Frequency: <input id="minimum-frequency" type="number" min="20" max="20000" value="900"><br>
+      Maximum Frequency: <input id="maximum-frequency" type="number" min="20" max="20000" value="1200"><br>
+      Last Segment Percent: <input id="last-bit-percent" type="number" min="0" max="100" value="90">%<br>
+      FFT Size: 2^<input id="fft-size-power-text" type="number" min="5" max="15" value="90"><br>
+      Frequency Resolution Multiplier: <input id="frequency-resolution-multiplier" type="number" min="1" max="20"
+        value="2"><br>
+      Smoothing Time Constant: <input id="smoothing-time-constant-text" type="number" min="0.00" max="1.00" step="0.01"
+        value="0.00"><br>
+      <label>
+        <input type="checkbox" id="error-correction-hamming" checked>Hamming Code Error Correction
+      </label><br>
+    </div>
+    <div>
+      <h2>Packet</h2>
+      Data Bits: <span id="data-bits-to-send">N/A</span> Bytes: <span id="data-bytes-to-send">N/A</span><br />
+      Data Size Header Bits: <span id="data-size-header-bits">N/A</span><br />
+      Error Correction Bits: <span id="error-correction-bits">N/A</span><br />
+      Total Bits: <span id="total-bits-to-send">N/A</span> Bytes: <span id="total-bytes-to-send">N/A</span><br />
+      Channels: <span id="packet-send-channel-count">N/A</span><br />
+      Segment Count: <span id="packet-send-segment-count">N/A</span><br />
+      Segment Duration: <span id="packet-send-segment-duration">N/A</span>s<br />
+      Total Duration: <span id="duration-to-send">N/A</span>s<br />
+    </div>
+    <div>
+      <h2>Information</h2>
+      Frequency Resolution: <span id="frequency-resolution">N/A</span><br>
+      Frequency Count: <span id="frequency-count">N/A</span><br>
       Samples Per Bit: <span id="samples-per-bit">0</span><br>
       Sample Rate: <span id="audio-context-sample-rate">N/A</span> per second.<br />
       Segments per second: <span id="durations-per-second">N/A</span><br />
       Bits per segment: <span id="bits-per-duration">N/A</span><br />
-      Speed: <span id="data-transfer-speed-bits-per-second">N/A</span> Baud<br>
-      <span id="data-transfer-speed-bytes-per-second">N/A</span> Bytes/second<br />
-      Effective Speed: <span id="effective-speed-bits-per-second">N/A</span> Baud<br>
-      <span id="effective-speed-bytes-per-second">N/A</span> Bytes/second<br />
-    </div>
-    <canvas id="received-graph" width="550" height="100"></canvas><br>
-    <div>
-      <div>
-        <h2>Decoded</h2>
-        <textarea id="decoded-data" rows="10" cols="40"></textarea><br />
-        Data Byte Count: <span id="decoded-byte-count">N/A</span><br />
-      </div>
     </div>
     <div>
-      <label>
-        <input type="checkbox" id="pause-after-end" checked>Pause after end
-      </label><br>
-      Max Bits Displayed: <input id="max-bits-displayed-on-graph" type="number" min="1" max="2000"><br>
-
+      <h2>Speed</h2>
+      Baud: <span id="data-transfer-speed-bits-per-second">N/A</span><br>
+      Bytes/s: <span id="data-transfer-speed-bytes-per-second">N/A</span><br />
+      Effective Baud: <span id="effective-speed-bits-per-second">N/A</span><br>
+      Effective Bytes/s: <span id="effective-speed-bytes-per-second">N/A</span><br />
     </div>
   </div>
 </body>

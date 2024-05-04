@@ -18,7 +18,23 @@ body {
   border-bottom: 4px solid darkolivegreen;
   color: black;
 }
-.panels > div textarea {
+#received-graph {
+  background-color: black;
+}
+textarea, .raw-data {
   background-color: rgb(41, 59, 10);
   color: rgb(75, 185, 75);
+  width: 250px;
+  height: 75px;
+  font-size: x-small;
+  border: 1px solid grey;
+  overflow: auto;
+  font-family: monospace;
+}
+.bit-wrong {
+  font-weight: bolder;
+  color: red;
+}
+.bit-unexpected {
+  color: green;
 }

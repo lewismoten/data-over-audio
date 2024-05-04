@@ -36,6 +36,10 @@ var PAUSE = false;
 var PAUSE_AFTER_END = true;
 var PACKET_SIZE_BITS = 10;
 
+var EXPECTED_ENCODED_BITS = [];
+var EXPECTED_BITS = [];
+var EXPECTED_TEXT = '';
+
 const packetBits = [];
 const packetDecodedBits = [];
 let packetDataByteCount = -1;
@@ -114,8 +118,33 @@ function handleWindowLoad() {
   // wire up events
   sendButton.addEventListener('click', handleSendButtonClick);
   isListeningCheckbox.addEventListener('click', handleListeningCheckbox);
-  // textToSend.addEventListener('keypress', handleTextToSendKeypress);
+  textToSend.addEventListener('input', handleTextToSendInput);
+  handleTextToSendInput();
   showSpeed();
+}
+
+function handleTextToSendInput() {
+  const text = textToSend.value;
+  const dataByteCount = text.length;
+  const dataBitCount = dataByteCount * 8;
+  const nibblesToEncode = HAMMING_ERROR_CORRECTION ? Math.ceil((dataBitCount + PACKET_SIZE_BITS) / 4) : 0;
+  const errorCorrectionBits = nibblesToEncode * 3;
+  const totalBits = errorCorrectionBits + dataBitCount + PACKET_SIZE_BITS;
+  const totalBytes = Math.ceil(totalBits / 8);
+  const channelCount = getChannels().length;
+  const segmentCount = Math.ceil(totalBits / channelCount);
+  const totalDuration = ((segmentCount * FREQUENCY_DURATION) / 1000);
+
+  document.getElementById('error-correction-bits').innerText = errorCorrectionBits.toLocaleString();
+  document.getElementById('data-bytes-to-send').innerText = dataByteCount.toLocaleString();
+  document.getElementById('data-bits-to-send').innerText = dataBitCount.toLocaleString();
+  document.getElementById('total-bytes-to-send').innerText = totalBytes.toLocaleString();
+  document.getElementById('total-bits-to-send').innerText = totalBits.toLocaleString();
+  document.getElementById('duration-to-send').innerText = totalDuration.toLocaleString();
+  document.getElementById('packet-send-channel-count').innerText = channelCount.toLocaleString();
+  document.getElementById('packet-send-segment-count').innerText = segmentCount.toLocaleString();
+  document.getElementById('packet-send-segment-duration').innerText = (FREQUENCY_DURATION / 1000).toLocaleString();
+  document.getElementById('data-size-header-bits').innerText = PACKET_SIZE_BITS.toLocaleString();
 }
 
 function updateFrequencyResolution() {
@@ -149,6 +178,7 @@ function showSpeed() {
     document.getElementById('effective-speed-bits-per-second').innerText = effectiveBaud.toFixed(2);
     document.getElementById('effective-speed-bytes-per-second').innerText = effectiveBytes.toFixed(2);
   }
+  handleTextToSendInput();
 }
 function nibbleToHamming(nibble) {
   if(nibble.length !== 4) return [];
@@ -223,9 +253,12 @@ function sendBits(bits) {
     .padStart(PACKET_SIZE_BITS, '0')
     .split('')
     .map(Number);
-
+    
   bits.unshift(...packetLength);
-  logSent(bits.join(''));
+
+  EXPECTED_BITS = bits.slice();
+
+  document.getElementById('sent-data').value = bits.reduce(bitReducer, '');
 
   if(HAMMING_ERROR_CORRECTION) {
     const encodedBits = [];
@@ -234,8 +267,11 @@ function sendBits(bits) {
       while(nibble.length < 4) nibble.push(0);
       encodedBits.push(...nibbleToHamming(bits.slice(i, i + 4)));
     }
+    document.getElementById('encoded-data').value = encodedBits.reduce(bitReducer, '');
     bits = encodedBits;
   }
+  EXPECTED_ENCODED_BITS = bits.slice();
+
   var audioContext = getAudioContext();
   const channels = getChannels();
   const oscillators = [];
@@ -440,7 +476,7 @@ function processSegmentReceived() {
   });
   const bitValues = channels.map(({isHigh, isLow, isMissing}) => {
     if(isMissing > isHigh + isLow) return '.';
-    return isHigh > isLow ? '1' : '0';
+    return isHigh > isLow ? 1 : 0;
   });
 
   packetBits.push(...bitValues);
@@ -452,17 +488,18 @@ function processSegmentReceived() {
       const hamming = packetBits.slice(i, i + 7);
       const nibble = hammingToNibble(hamming);
       packetDecodedBits.push(...nibble);
-      console.log(i, hamming, nibble);
     }
   } else {
-    packetDecodedBits = packetBits;
+    packetDecodedBits.length = 0;
+    packetDecodedBits.push(...packetBits);
   }
 
-  if(packetDecodedBits.length >= 10) {
-    // we can evaluate how many bytes are comming
-    const encodedBitsNeeded = Math.ceil(10 * encodingRatio);
-    const dataLengthIndex = Math.floor(encodedBitsNeeded / channelCount);
-    if(dataLengthIndex === segmentIndex) {
+  // Determine if we can identify the length of data comming
+  const encodedBitsNeededForDataLength = Math.ceil(Math.ceil(PACKET_SIZE_BITS / 4) * encodingRatio);
+  if(packetDecodedBits.length >= encodedBitsNeededForDataLength) {
+    // we can evaluate when we should know many bytes are comming
+    const dataLengthIndex = Math.floor(encodedBitsNeededForDataLength / channelCount);
+    // if(dataLengthIndex === segmentIndex) {
       // we just got the bits we needed
       packetDataByteCount = 1 + packetDecodedBits
         .slice(0, PACKET_SIZE_BITS)
@@ -473,43 +510,86 @@ function processSegmentReceived() {
       const segments = Math.ceil(totalBits / channelCount);
       const duration = segments * FREQUENCY_DURATION;
       const streamEnded = streamStarted + duration;
-      console.log({
-        tenBitNum: packetDecodedBits
-        .slice(0, PACKET_SIZE_BITS).join(''),
-        packetDataByteCount,
-        PACKET_SIZE_BITS,
-        totalBits,
-        segments,
-        streamStarted,
-        duration,
-        streamEnded
-      });
+      // console.log({
+      //   tenBitNum: packetDecodedBits
+      //   .slice(0, PACKET_SIZE_BITS).join(''),
+      //   packetDataByteCount,
+      //   PACKET_SIZE_BITS,
+      //   totalBits,
+      //   segments,
+      //   streamStarted,
+      //   duration,
+      //   streamEnded
+      // });
       // update everyones proposed end time
       frequencyOverTime
         .filter(fot => fot.streamStarted === streamStarted)
         .forEach(fot => {
           fot.streamEnded = streamEnded
         });
-    }
+    // }
     // remove phantom bits
-    const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
+    // const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
     if(packetBits.length > totalBits) {
-      const excess = packetBits.length % totalBits;
-      packetBits.length = totalBits;
-      bitValues.length = bitValues.length - excess;
+      // const excess = packetBits.length % totalBits;
+      // packetBits.length = totalBits;
+      // bitValues.length = bitValues.length - excess;
     }
   }
 
-  document.getElementById('decoded-data').value = packetDecodedBits.reduce((all, bit, i) => {
-    if(i !== 0 && i % 8 === 0) return all + ' ' + bit;
-    return all + bit;
-  }, '');
-  document.getElementById('received-data').value = packetBits.reduce((all, bit, i) => {
-    if(i !== 0 && i % 8 === 0) return all + ' ' + bit;
-    return all + bit;
-  }, '');
- 
+  document.getElementById('decoded-data').innerHTML = packetDecodedBits.reduce(bitExpectorReducer(EXPECTED_BITS), '');
+  document.getElementById('received-data').innerHTML = packetBits.reduce(bitExpectorReducer(EXPECTED_ENCODED_BITS), '');
+
+  const encodedBitCount = EXPECTED_ENCODED_BITS.length;
+  const decodedBitCount = EXPECTED_BITS.length;
+  const correctEncodedBits = packetBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
+  const correctedDecodedBits = packetDecodedBits.filter((b, i) => i < decodedBitCount && b === EXPECTED_BITS[i]).length;
+  document.getElementById('received-data-error-percent').innerText = (
+    Math.floor((1 - (correctEncodedBits / encodedBitCount)) * 1000) * 0.1
+  ).toLocaleString();
+  document.getElementById('decoded-data-error-percent').innerText = (
+    Math.floor((1 - (correctedDecodedBits / decodedBitCount)) * 1000) * 0.1
+  ).toLocaleString();
+  document.getElementById('decoded-text').innerHTML = packetDecodedBits.reduce(textExpectorReducer(EXPECTED_TEXT), '');
 }
+function bitReducer(all, bit, i) {
+  if(i !== 0 && i % 8 === 0) return all + ' ' + bit;
+  return all + bit;
+}
+const bitExpectorReducer = expected => (all, bit, i) => {
+  // if(i === 0) console.log(expected.slice(), all, bit, i);
+
+  if(i !== 0 && i % 8 === 0) all += ' ';
+  if(i >= expected.length) {
+    all += '<span class="bit-unexpected">';
+  } else if(expected[i] !== bit) {
+    all += '<span class="bit-wrong">';
+  }
+  all += bit;
+  if(i >= expected.length || expected[i] !== bit) {
+    all += '</span>';
+  }
+  return all;
+}
+const textExpectorReducer = expected => (all, bit, i, bits) => {
+  if(i < PACKET_SIZE_BITS) return all;
+  if((i - PACKET_SIZE_BITS) % 8 === 0) {
+    const bitString = bits.slice(
+      i, 
+      i + 8
+    ).join('').padEnd(8, '0');
+    const ascii = parseInt(bitString, 2);
+    const char = String.fromCharCode(ascii);
+    const charIndex = Math.floor((i - PACKET_SIZE_BITS) / 8);
+    if(char !== expected[charIndex]) {
+      all += '<span class="bit-wrong">' + char + '</span>';
+    } else {
+      all += char;
+    }
+  }
+  return all;
+}
+
 function resetGraphData() {
   frequencyOverTime.length = 0;
   bitStart.length = 0;
@@ -552,6 +632,7 @@ function handleSendButtonClick() {
   sentDataTextArea.value = '';
 
   const text = document.getElementById('text-to-send').value;
+  EXPECTED_TEXT = text;
   sendBits(textToBits(text));
 }
 function handleListeningCheckbox(e) {
@@ -761,7 +842,7 @@ function drawFrequencyData() {
   ctx.moveTo(0, thresholdY);
   ctx.lineTo(width, thresholdY);
   ctx.stroke();
-  drawBitDurationLines(ctx, 'yellow');
+  drawBitDurationLines(ctx, 'rgba(255, 255, 0, .25)');
   drawBitStart(ctx, 'green');
   const frequencies = getChannels();
   frequencies.forEach(([low, high], i) => {
