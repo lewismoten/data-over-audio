@@ -888,10 +888,91 @@ function drawFrequencyDots(ctx, hz, color) {
   }
 }
 function getTimeX(time, newest) {
-  const { width } = receivedGraph;
+  return getTimePercent(time, newest) * receivedGraph.width;
+}
+function getTimePercent(time, newest) {
   const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   if(newest - time > duration) return -1;
-  return ((newest - time) / duration) * width;
+  return ((newest - time) / duration);
+}
+function drawChannelData() {
+  const canvas = document.getElementById('received-channel-graph');
+  const ctx = canvas.getContext('2d');
+  const {height, width} = canvas;
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, width, height);
+
+  const sampleRate = getAudioContext().sampleRate;
+  const fftSize = 2 ** FFT_POWER;
+  const frequencyResolution = sampleRate / fftSize;
+  //const frequencyCount = (sampleRate/2) / frequencyResolution;
+  const channels = getChannels();
+  const channelCount = channels.length;
+  const channelHeight = height / channelCount;
+  const bandHeight = channelHeight / 2;
+
+  const nyquistFrequency = audioContext.sampleRate / 2;
+  const frequencySegments = Math.floor(nyquistFrequency / frequencyResolution);
+
+  const newest = frequencyOverTime[0].time;
+  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+
+  for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+    const [low, high] = channels[channelIndex];
+    let top = channelHeight * channelIndex;
+
+    ctx.fillStyle = channelIndex % 2 === 0 ? 'black' : 'white';
+    // ctx.fillRect(0, top, width, channelHeight);
+
+    // Data
+    ctx.strokeStyle = 'blue';
+    for(let i = 0; i < frequencyOverTime.length; i++) {
+      const {frequencies, time, length, hasSignal, segmentIndex, pairs
+      } = frequencyOverTime[i];
+      if(!hasSignal) continue;
+
+      const x1 = getTimePercent(time, newest) * width;
+      if(x1 === -1) continue;
+      const x2 = i < frequencyOverTime.length - 1 ? getTimePercent(frequencyOverTime[i + 1].time, newest) * width : width;
+      const sampleWidth = x2 - x1;
+      // const amplitude = hzAmplitude(hz, length, frequencies);
+      ctx.beginPath();
+
+      // what should the bit be for this channel?
+      const bitIndex = (segmentIndex * channelCount) + channelIndex;
+      const expectedBit = packetBits[bitIndex];
+
+      // what is the bit?
+      const {
+        channel,
+        lowHz,
+        highHz,
+        isMissing,
+        isHigh
+      } = pairs[channelIndex];
+      const actualBit = isHigh ? 1 : 0;
+
+      ctx.fillStyle = actualBit === expectedBit ? 'green' : 'red';
+      ctx.fillRect(x1, top, sampleWidth,channelHeight);
+
+      ctx.lineWidth = 0.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.strokeRect(x1, top, sampleWidth, channelHeight);
+      ctx.stroke();
+    }
+
+    // channel number
+    ctx.font = `${channelHeight}px Arial`;
+    const size = ctx.measureText(channelIndex);
+    const textHeight = size.fontBoundingBoxAscent + size.fontBoundingBoxDescent;
+    const textTop = top;//(top + (channelHeight / 2)) - (textHeight/2);
+    ctx.fillStyle = 'red';
+    ctx.fillText(channelIndex, 5, textTop);
+
+
+  }
+
+
 }
 function drawFrequencyData() {
   if(PAUSE) return;
@@ -899,6 +980,7 @@ function drawFrequencyData() {
     requestAnimationFrame(drawFrequencyData);
     return;
   }
+  drawChannelData();
   const ctx = receivedGraph.getContext('2d');
   const { width, height } = receivedGraph;
   ctx.fillStyle = 'black';
