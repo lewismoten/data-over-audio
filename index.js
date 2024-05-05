@@ -444,28 +444,22 @@ function collectSample() {
   } = frequencyOverTime[0] ?? {}
   const data = {
     time,
-    frequencies: [...frequencies],
+    // frequencies: [...frequencies],
     length,
     streamEnded: priorStreamEnded
   };
-  let hasSignal = false;
   data.pairs = getChannels().map(([low, high], i) => {
     const lowAmp = frequencies[Math.round(low / length)];
     const highAmp = frequencies[Math.round(high / length)];
-    const isLow = lowAmp > AMPLITUDE_THRESHOLD;
-    const isHigh = highAmp > AMPLITUDE_THRESHOLD;
-    if(isLow || isHigh ) hasSignal = true;
     return {
-      channel: i,
-      lowHz: low,
-      highHz: high,
       lowAmp,
       highAmp,
-      isMissing: !(isHigh || isLow),
-      isHigh: (isHigh && !isLow) || highAmp > lowAmp
     };
   });
-  data.hasSignal = hasSignal;
+  const hasSignal = data.hasSignal = data.pairs.some(p => 
+    p.lowAmp > AMPLITUDE_THRESHOLD || 
+    p.highAmp > AMPLITUDE_THRESHOLD
+  );
   if(hasSignal) {
     if(hadPriorSignal) {
       // continued bit stream
@@ -529,7 +523,7 @@ function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
     heard: 0
   }));
   samples.forEach(({pairs}) => {
-    pairs.forEach(({ highAmp, lowAmp, channel }) => {
+    pairs.forEach(({ highAmp, lowAmp }, channel) => {
       sums[channel].high += highAmp;
       sums[channel].low += lowAmp;
       if(highAmp > AMPLITUDE_THRESHOLD || lowAmp > AMPLITUDE_THRESHOLD) {
@@ -929,15 +923,11 @@ function drawBitStart(ctx, color) {
     ctx.stroke();
   }
 }
-function hzAmplitude(hz, length, frequencies) {
-  var index = Math.round(hz / length);
-  return frequencies[index];
-}
 function getPercentY(percent) {
   const { height } = receivedGraph;
   return (1 - percent) * height;
 }
-function drawFrequencyLineGraph(ctx, hz, color, lineWidth, dashed) {
+function drawFrequencyLineGraph(ctx, channel, highLowIndex, color, lineWidth, dashed) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
   const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
@@ -948,10 +938,10 @@ function drawFrequencyLineGraph(ctx, hz, color, lineWidth, dashed) {
   }
   ctx.beginPath();
   for(let i = 0; i < frequencyOverTime.length; i++) {
-    const {frequencies, time, length} = frequencyOverTime[i];
+    const {pairs, time} = frequencyOverTime[i];
     const x = getTimeX(time, newest);
     if(x === -1) continue;
-    const amplitude = hzAmplitude(hz, length, frequencies);
+    const amplitude = pairs[channel][highLowIndex];
     const y = getPercentY(amplitude / MAX_DATA);
     if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
@@ -960,7 +950,7 @@ function drawFrequencyLineGraph(ctx, hz, color, lineWidth, dashed) {
     ctx.setLineDash([]);
   }
 }
-function drawFrequencyDots(ctx, hz, color) {
+function drawFrequencyDots(ctx, channel, highLowIndex, color) {
   const newest = frequencyOverTime[0].time;
   const radius = 2;
   const border = 0.5;
@@ -969,10 +959,10 @@ function drawFrequencyDots(ctx, hz, color) {
   ctx.lineWidth = border;
   const fullCircle = 2 * Math.PI;
   for(let i = 0; i < frequencyOverTime.length; i++) {
-    const {frequencies, time, length} = frequencyOverTime[i];
+    const {pairs, time} = frequencyOverTime[i];
     const x = getTimeX(time, newest);
     if(x === -1) continue;
-    const amplitude = hzAmplitude(hz, length, frequencies);
+    const amplitude = pairs[channel][highLowIndex];
     const y = getPercentY(amplitude / MAX_DATA);
 
     ctx.beginPath();
@@ -1132,10 +1122,12 @@ function drawFrequencyData() {
   drawBitDurationLines(ctx, 'rgba(255, 255, 0, .25)');
   drawBitStart(ctx, 'green');
   const frequencies = getChannels();
-  frequencies.forEach(([low, high], i) => {
-    const hue = channelHue(i, frequencies.length);
-    drawFrequencyLineGraph(ctx, high, `hsl(${hue}, 100%, 50%)`, 2, false);
-    drawFrequencyLineGraph(ctx, low, `hsl(${hue}, 100%, 25%)`, 1, true);
+  const high = 1;
+  const low = 0
+  frequencies.forEach((v, channel) => {
+    const hue = channelHue(channel, frequencies.length);
+    drawFrequencyLineGraph(ctx, channel, high, `hsl(${hue}, 100%, 50%)`, 2, false);
+    drawFrequencyLineGraph(ctx, channel, low, `hsl(${hue}, 100%, 25%)`, 1, true);
   });
   drawSegmentIndexes(ctx);
 
