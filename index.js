@@ -972,6 +972,7 @@ function getTimePercent(time, newest) {
   return ((newest - time) / duration);
 }
 function drawChannelData() {
+  const S = performance.now();
   // return;
   const canvas = document.getElementById('received-channel-graph');
   const ctx = canvas.getContext('2d');
@@ -1063,9 +1064,6 @@ function drawChannelData() {
 
     }
 
-    // for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-    //   const [low, high] = channels[channelIndex];
-    //   let top = channelHeight * channelIndex;
     if(channelIndex % 8 === 0) {
       ctx.strokeStyle = 'black';
       ctx.lineWidth = 3;
@@ -1074,22 +1072,26 @@ function drawChannelData() {
       ctx.lineTo(width, top-1);
       ctx.stroke();
     }
-      
-    // channel number
-    ctx.font = `${channelHeight}px Arial`;
-    const size = ctx.measureText(channelIndex);
-    const textHeight = size.fontBoundingBoxAscent + size.fontBoundingBoxDescent;
-    const textTop = top + (channelHeight / 2) + (size.actualBoundingBoxAscent / 2);
-    // const textTop = top;//(top + (channelHeight / 2)) - (textHeight/2);
-    const hue = channelHue(channelIndex, channelCount);
-    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-
-    ctx.fillText(channelIndex, 5, textTop);
-
-
   }
   overlays.forEach(fn => fn());
-
+  drawChannelNumbers(ctx, channelCount, channelHeight)
+  console.log('time', performance.now() - S);
+}
+function drawChannelNumbers(ctx, channelCount, channelHeight) {
+  let fontHeight = Math.min(24, channelHeight);
+  ctx.font = `${fontHeight}px Arial`;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0, 0, 0, .5)';
+  const maxDigits = (channelCount - 1).toString().length;
+  ctx.fillRect(0, 0, (fontHeight * maxDigits), channelHeight * channelCount);
+  for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+    let top = channelHeight * channelIndex;
+    let text = channelIndex.toString();
+    const textTop = top + (channelHeight / 2);
+    const hue = channelHue(channelIndex, channelCount);
+    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+    ctx.fillText(text, 5, textTop);
+  }
 }
 function drawFrequencyData() {
   if(PAUSE) return;
