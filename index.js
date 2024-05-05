@@ -1130,10 +1130,12 @@ function drawChannelSegmentForeground(
   const size = ctx.measureText(actualBit.toString());
   ctx.textBaseline = 'middle';
   const textTop = top + (channelHeight / 2);
-  ctx.strokeStyle = actualBit !== expectedBit ? 'black' : 'black';
-  ctx.lineWidth = 2;
-  ctx.strokeText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
-  ctx.fillStyle = actualBit !== expectedBit ? 'white' : 'white';
+  if(actualBit === expectedBit) {
+    ctx.strokeStyle = actualBit !== expectedBit ? 'black' : 'black';
+    ctx.lineWidth = 2;
+    ctx.strokeText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
+  }
+  ctx.fillStyle = actualBit !== expectedBit ? '#2d0c0c' : 'white';
   ctx.fillText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
 
 }
@@ -1152,7 +1154,7 @@ function drawChannelSegmentBackground(
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let top = channelHeight * channelIndex;
   // color red if received bit does not match expected bit
-  ctx.fillStyle = actualBit === expectedBit ? 'green' : 'red';
+  ctx.fillStyle = actualBit === expectedBit ? 'green' : '#ff7770';
   ctx.fillRect(endX, top, segmentWidth, channelHeight);
 
   ctx.lineWidth = 0.5;
