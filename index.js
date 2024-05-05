@@ -29,7 +29,7 @@ var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 
 var LAST_STREAM_STARTED;
-var SAMPLE_DELAY_MS = 1;
+var MINIMUM_INTERVAL_MS = 3; // DO NOT SET THIS BELOW THE BROWSERS MINIMUM "real" INTERVAL
 const SAMPLING_INTERVAL_COUNT = 2;
 var frequencyOverTime = [];
 var bitStart = [];
@@ -404,7 +404,7 @@ function startCollectingSamples() {
     if(sampleIntervalIds[i]) continue;
     sampleIntervalIds[i] = window.setInterval(
       collectSample,
-      SAMPLE_DELAY_MS + (i/SAMPLING_INTERVAL_COUNT)
+      MINIMUM_INTERVAL_MS + (i/SAMPLING_INTERVAL_COUNT)
     );
   }
 }
@@ -538,17 +538,22 @@ function processSegmentReceived(streamStarted, segmentIndex) {
     fot => fot.streamStarted === streamStarted &&
     fot.segmentIndex === segmentIndex
   );
-  if(samples.length <= 1) return; // too short
-  const sampleEnd = samples[0].time;
-  const sampleStart = samples[samples.length-1].time;
-  const sampleDuration = sampleEnd - sampleStart;
 
-  // not long enough to qualify as a segment
-  if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
+  let bitValues;
+  if(samples.length === 0) {
+    // nothing collected
+    // bitValues = new Array(channelCount).fill(0);
+    return;
+  } else {
+const sampleEnd = samples[0].time;
+const sampleStart = streamStarted + (segmentIndex * SEGMENT_DURATION);
+const sampleDuration = (sampleEnd - sampleStart) + MINIMUM_INTERVAL_MS;
 
-  const bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex);
-  // let bitValues2 = GET_SEGMENT_BITS(streamStarted, segmentIndex);
-  // console.log(segmentIndex, bitValues.join('') === bitValues2.join(''), bitValues.join(''), bitValues2.join(''))
+// not long enough to qualify as a segment
+if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
+
+    bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex);
+  }
   packetReceivedBits.push(...bitValues);
 
   const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
@@ -580,17 +585,6 @@ function processSegmentReceived(streamStarted, segmentIndex) {
       const segments = Math.ceil(totalBits / channelCount);
       const duration = segments * SEGMENT_DURATION;
       const streamEnded = streamStarted + duration;
-      // console.log({
-      //   tenBitNum: packetDecodedBits
-      //   .slice(0, PACKET_SIZE_BITS).join(''),
-      //   packetDataByteCount,
-      //   PACKET_SIZE_BITS,
-      //   totalBits,
-      //   segments,
-      //   streamStarted,
-      //   duration,
-      //   streamEnded
-      // });
       // update everyones proposed end time
       frequencyOverTime
         .filter(fot => fot.streamStarted === streamStarted)
