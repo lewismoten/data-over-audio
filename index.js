@@ -491,7 +491,7 @@ function collectSample() {
          pauseTimeoutId = window.setTimeout(() => {
           pauseTimeoutId = undefined;
           if(PAUSE_AFTER_END) stopGraph();
-        }, SEGMENT_DURATION * 0.5);
+        }, SEGMENT_DURATION * 2);
       }
     } else {
       // continued stopping (or never started)
@@ -1049,6 +1049,7 @@ function drawChannelData() {
     }
     drawSegmentBackground(
       ctx,
+      segmentIndex,
       leftX,
       expectedBitCount,
       channelCount,
@@ -1099,6 +1100,7 @@ function clearCanvas(canvas) {
 }
 function drawSegmentBackground(
   ctx,
+  segmentIndex,
   leftX,
   expectedBitCount,
   channelCount,
@@ -1106,7 +1108,7 @@ function drawSegmentBackground(
   height
 ) {
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
-  ctx.fillStyle = 'green';
+  ctx.fillStyle = segmentIndex % 2 === 0 ? 'rgb(0, 128, 0)': 'rgb(0, 64, 0)';
   const segmentHeight = (expectedBitCount / channelCount) * height
   ctx.fillRect(leftX, 0, segmentWidth, segmentHeight);
 }
@@ -1170,7 +1172,7 @@ function drawChannelByteMarkers(ctx, channelCount, width, height) {
   }
 }
 function drawChannelNumbers(ctx, channelCount, width, height) {
-  const offset = 50;
+  const offset = 0;
   const channelHeight = height / channelCount;
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
