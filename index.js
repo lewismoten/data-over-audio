@@ -28,6 +28,7 @@ var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
 var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 
+var SEND_VIA_SPEAKER = false;
 var LAST_STREAM_STARTED;
 var MINIMUM_INTERVAL_MS = 3; // DO NOT SET THIS BELOW THE BROWSERS MINIMUM "real" INTERVAL
 const SAMPLING_INTERVAL_COUNT = 2;
@@ -69,6 +70,10 @@ function handleWindowLoad() {
   document.getElementById('pause-after-end').addEventListener('change', event => {
     PAUSE_AFTER_END = event.target.checked;
     if(!PAUSE_AFTER_END) resumeGraph();
+  })
+  document.getElementById('send-via-speaker').checked = SEND_VIA_SPEAKER;
+  document.getElementById('send-via-speaker').addEventListener('input', event => {
+    SEND_VIA_SPEAKER = event.target.checked;
   })
   document.getElementById('frequency-resolution-multiplier').value = FREQUENCY_RESOLUTION_MULTIPLIER;
   document.getElementById('frequency-resolution-multiplier').addEventListener('input', event => {
@@ -355,10 +360,13 @@ function sendBits(bits) {
 
   const currentTime = audioContext.currentTime + 0.1;
 
+  const destination = SEND_VIA_SPEAKER ? audioContext.destination : getAnalyser();
+
   // create our oscillators
   for(let i = 0; i < channelCount; i++) {
     var oscillator = audioContext.createOscillator();
-    oscillator.connect(audioContext.destination);
+    
+    oscillator.connect(destination);
     oscillator.type = 'sawtooth';
     oscillators.push(oscillator);
   }
@@ -706,15 +714,20 @@ function handleSendButtonClick() {
   EXPECTED_TEXT = text;
   sendBits(textToBits(text));
 }
+function getAnalyser() {
+  if(analyser) return analyser;
+  analyser = audioContext.createAnalyser();
+  analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
+  analyser.fftSize = 2 ** FFT_SIZE_POWER;
+  return analyser;
+}
 function handleListeningCheckbox(e) {
   stopGraph();
   var audioContext = getAudioContext();
   function handleMicrophoneOn(stream) {
     microphoneStream = stream;
     microphoneNode = audioContext.createMediaStreamSource(stream);
-    analyser = audioContext.createAnalyser();
-    analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
-    analyser.fftSize = 2 ** FFT_SIZE_POWER;
+    analyser = getAnalyser();
     microphoneNode.connect(analyser);
     resumeGraph();
   }
