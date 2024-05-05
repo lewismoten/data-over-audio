@@ -971,77 +971,150 @@ function getTimePercent(time, newest) {
   if(newest - time > duration) return -1;
   return ((newest - time) / duration);
 }
+function getDataBitCount() {
+  const text = document.getElementById('text-to-send').value;
+  const dataByteCount = text.length;
+  return dataByteCount * 8;
+}
+function getPacketSizeUnencodedBitCount() {
+  return getDataBitCount() + PACKET_SIZE_BITS;
+}
+function getErrorCorrectionBlocks() {
+  if(!HAMMING_ERROR_CORRECTION) return 0;
+  const dataBitCount = getPacketSizeUnencodedBitCount();
+  return Math.ceil(dataBitCount / 4);
+}
+function getErrorCorrectionBitCount() {
+  return getErrorCorrectionBlocks() * 3;
+}
+function getPacketSizeEncodedBitCount() {
+  return getErrorCorrectionBitCount() + getPacketSizeUnencodedBitCount();
+}
+function getPacketSizeEncodedByteCount() {
+  return Math.ceil(getPacketSizeEncodedBitCount() / 8);
+}
+function getPacketSizeSegmentCount() {
+  const totalBits = getPacketSizeEncodedBitCount();
+  const channelCount = getChannels().length;
+  return Math.ceil(totalBits / channelCount);
+}
+function getPacketDurationMilliseconds() {
+  const segmentCount = getPacketSizeSegmentCount();
+  return segmentCount * SEGMENT_DURATION;
+}
 function drawChannelData() {
-  const S = performance.now();
-  // return;
-  const canvas = document.getElementById('received-channel-graph');
-  const ctx = canvas.getContext('2d');
-  const {height, width} = canvas;
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, width, height);
+  const now = performance.now();
+
+  // Do/did we have a stream?
+  if(!LAST_STREAM_STARTED) return;
+
+  // will any of the stream appear?
+  const packetBitCount = getPacketSizeEncodedBitCount();
+
+  const packetDuration = getPacketDurationMilliseconds();
+  const lastStreamEnded = LAST_STREAM_STARTED + packetDuration;
+  const graphDuration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const graphEarliest = now - graphDuration;
+  // ended too long ago?
+  if(lastStreamEnded < graphEarliest) return;
 
   const channels = getChannels();
   const channelCount = channels.length;
-  const newest = frequencyOverTime[0].time;
-  const overlays = [];
 
-  for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-    const segmentDurationS = SEGMENT_DURATION;
-
-    // Segments
-    const segmentCount = Math.ceil(EXPECTED_ENCODED_BITS.length / channelCount);
-    const lastStream = frequencyOverTime.find(fot => fot.hasSignal);
-    const streamStarted = lastStream?.streamStarted ?? newest;
-    const lastSegmentIndex = lastStream?.segmentIndex ?? segmentCount;
-    const oldest = newest - (segmentDurationS * MAX_BITS_DISPLAYED_ON_GRAPH);
+  const canvas = document.getElementById('received-channel-graph');
   
-    // Show segments with wrong bits
-    for(let segmentIndex = 0; segmentIndex <= lastSegmentIndex; segmentIndex++) {
-      const segmentBits = GET_SEGMENT_BITS(streamStarted, segmentIndex);
-      if(channelIndex >= segmentBits.length) continue; // past received/heard bits
-      const bitIndex = (segmentIndex * channelCount) + channelIndex;
-      if(bitIndex >= EXPECTED_ENCODED_BITS.length) continue; // past data stream
-      const segmentStart = streamStarted + (segmentIndex * segmentDurationS);
-      if(segmentStart > newest) break; // too far in the future
-      const segmentEnd = segmentStart + segmentDurationS;
-      if(segmentEnd < oldest) continue; // to far in the past
-      const endPercent = getTimePercent(segmentEnd, newest);
-      const endX = (endPercent) * width;
+  clearCanvas(canvas);
+  const ctx = canvas.getContext('2d');
+  const {height, width} = canvas;
 
-      // evaluate received bit
-      const actualBit = segmentBits[channelIndex];
+  // Loop through visible segments
+  const latestSegmentEnded = Math.min(now, lastStreamEnded);
+  for(let time = latestSegmentEnded; time > graphEarliest; time -= SEGMENT_DURATION) {
+    // too far back?
+    if(time < LAST_STREAM_STARTED) break;
+
+    // which segment are we looking at?
+    const segmentIndex = Math.floor(((time - LAST_STREAM_STARTED) / SEGMENT_DURATION));
+
+    // when did the segment begin/end
+    const segmentStart = LAST_STREAM_STARTED + (segmentIndex * SEGMENT_DURATION);
+    const segmentEnd = segmentStart + SEGMENT_DURATION;
+
+    // where is the segments left x coordinate?
+    const leftX = ((now - segmentEnd) / graphDuration) * width;
+
+    // what bits did we receive for the segment?
+    const segmentBits = GET_SEGMENT_BITS(LAST_STREAM_STARTED, segmentIndex);
+
+    // draw segment data background
+    let expectedBitCount = channelCount;
+    if(segmentEnd === lastStreamEnded) {
+      expectedBitCount = packetBitCount % channelCount;
+    } else if(segmentEnd > lastStreamEnded) {
+      continue;
+    }
+    drawSegmentBackground(
+      ctx,
+      leftX,
+      expectedBitCount,
+      channelCount,
+      width,
+      height
+    )
+
+    for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+      // get received bit
+      const receivedBit = segmentBits[channelIndex];
       // identify expected bit
+      const bitIndex = channelIndex + (segmentIndex * channelCount);
+      if(bitIndex >= EXPECTED_ENCODED_BITS.length) break;
       const expectedBit = EXPECTED_ENCODED_BITS[bitIndex];
 
       drawChannelSegmentBackground(
         ctx,
-        endX,
+        leftX,
         channelIndex,
         channelCount,
         height,
         width,
-        actualBit,
+        receivedBit,
         expectedBit
       );
 
-      overlays.push(() => {
-        drawChannelSegmentForeground(
-          ctx,
-          endX,
-          channelIndex,
-          channelCount,
-          height,
-          width,
-          actualBit,
-          expectedBit
-        );
-      });
+      drawChannelSegmentForeground(
+        ctx,
+        leftX,
+        channelIndex,
+        channelCount,
+        height,
+        width,
+        receivedBit,
+        expectedBit
+      );
     }
   }
   drawChannelByteMarkers(ctx, channelCount, width, height);
-  overlays.forEach(fn => fn());
   drawChannelNumbers(ctx, channelCount, width, height)
-  console.log('time', performance.now() - S);
+  console.log('time', Math.ceil(performance.now() - now));
+}
+function clearCanvas(canvas) {
+  const ctx = canvas.getContext('2d');
+  const {height, width} = canvas;
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, width, height);
+}
+function drawSegmentBackground(
+  ctx,
+  leftX,
+  expectedBitCount,
+  channelCount,
+  width,
+  height
+) {
+  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  ctx.fillStyle = 'green';
+  const segmentHeight = (expectedBitCount / channelCount) * height
+  ctx.fillRect(leftX, 0, segmentWidth, segmentHeight);
 }
 function drawChannelSegmentForeground(
   ctx,
@@ -1078,6 +1151,7 @@ function drawChannelSegmentBackground(
   actualBit,
   expectedBit
 ) {
+  if(expectedBit === actualBit) return;
   const channelHeight = height / channelCount;
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let top = channelHeight * channelIndex;
@@ -1102,6 +1176,7 @@ function drawChannelByteMarkers(ctx, channelCount, width, height) {
   }
 }
 function drawChannelNumbers(ctx, channelCount, width, height) {
+  const offset = 50;
   const channelHeight = height / channelCount;
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
@@ -1109,14 +1184,14 @@ function drawChannelNumbers(ctx, channelCount, width, height) {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(0, 0, 0, .5)';
   const maxDigits = (channelCount - 1).toString().length;
-  ctx.fillRect(0, 0, (fontHeight * maxDigits), channelHeight * channelCount);
+  ctx.fillRect(offset, 0, (fontHeight * maxDigits), channelHeight * channelCount);
   for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
     let top = channelHeight * channelIndex;
     let text = channelIndex.toString();
     const textTop = top + (channelHeight / 2);
     const hue = channelHue(channelIndex, channelCount);
     ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-    ctx.fillText(text, 5, textTop);
+    ctx.fillText(text, offset + 5, textTop);
   }
 }
 function drawFrequencyData() {
