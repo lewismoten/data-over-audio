@@ -448,18 +448,10 @@ function collectSample() {
     length,
     streamEnded: priorStreamEnded
   };
-  data.pairs = getChannels().map(([low, high], i) => {
-    const lowAmp = frequencies[Math.round(low / length)];
-    const highAmp = frequencies[Math.round(high / length)];
-    return {
-      lowAmp,
-      highAmp,
-    };
-  });
-  const hasSignal = data.hasSignal = data.pairs.some(p => 
-    p.lowAmp > AMPLITUDE_THRESHOLD || 
-    p.highAmp > AMPLITUDE_THRESHOLD
-  );
+  // Get amplitude of each channels set of frequencies
+  data.pairs = getChannels().map(hzSet => hzSet.map(hz => frequencies[Math.round(hz / length)]));
+  const hasSignal = data.hasSignal = data.pairs.some(amps => amps.some(amp => amp > AMPLITUDE_THRESHOLD));
+
   if(hasSignal) {
     if(hadPriorSignal) {
       // continued bit stream
@@ -517,25 +509,22 @@ function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
     f.streamStarted === streamStarted
   );
   const channelCount = frequencyOverTime[0].pairs.length;
-  const sums = new Array(channelCount).fill(0).map(() => ({
-    high: 0,
-    low: 0,
-    heard: 0
-  }));
+  const channelFrequencyCount = 2;
+  const sums = new Array(channelCount)
+    .fill(0)
+    .map(() => 
+      new Array(channelFrequencyCount)
+      .fill(0)
+    );
   samples.forEach(({pairs}) => {
-    pairs.forEach(({ highAmp, lowAmp }, channel) => {
-      sums[channel].high += highAmp;
-      sums[channel].low += lowAmp;
-      if(highAmp > AMPLITUDE_THRESHOLD || lowAmp > AMPLITUDE_THRESHOLD) {
-        sums[channel].heard++;
-      }
-    })
+    pairs.forEach((amps, channel) => {
+      amps.forEach((amp, i) => {
+        sums[channel][i] += amp;
+      });
+    });
   });
-  const bitValues = sums.map(({high, low}) => high >= low ? 1 : 0);
-  // cut off silent bits
-  // const lastHeard = sums.lastIndexOf(s => s.heard !== 0);
-  const lastHeard = sums.length -1;
-  return bitValues.slice(0, lastHeard + 1);
+  const bitValues = sums.map((amps) => amps[0] > amps[1] ? 0 : 1);
+  return bitValues;
 }
 function processSegmentReceived(streamStarted, segmentIndex) {
   const {
@@ -983,6 +972,7 @@ function getTimePercent(time, newest) {
   return ((newest - time) / duration);
 }
 function drawChannelData() {
+  // return;
   const canvas = document.getElementById('received-channel-graph');
   const ctx = canvas.getContext('2d');
   const {height, width} = canvas;
