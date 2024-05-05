@@ -980,32 +980,12 @@ function drawChannelData() {
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, width, height);
 
-  const sampleRate = getAudioContext().sampleRate;
-  const fftSize = 2 ** FFT_SIZE_POWER;
-  const frequencyResolution = sampleRate / fftSize;
-  //const frequencyCount = (sampleRate/2) / frequencyResolution;
   const channels = getChannels();
   const channelCount = channels.length;
-  const channelHeight = height / channelCount;
-  const bandHeight = channelHeight / 2;
-
-  const nyquistFrequency = audioContext.sampleRate / 2;
-  const frequencySegments = Math.floor(nyquistFrequency / frequencyResolution);
-
   const newest = frequencyOverTime[0].time;
-  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   const overlays = [];
 
   for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
-    const [low, high] = channels[channelIndex];
-    let top = channelHeight * channelIndex;
-
-    // ctx.fillStyle = channelIndex % 2 === 0 ? 'black' : 'white';
-    // ctx.fillRect(0, top, width, channelHeight);
-
-    // Data
-    // ctx.strokeStyle = 'blue';
-
     const segmentDurationS = SEGMENT_DURATION;
 
     // Segments
@@ -1026,10 +1006,7 @@ function drawChannelData() {
       const segmentEnd = segmentStart + segmentDurationS;
       if(segmentEnd < oldest) continue; // to far in the past
       const endPercent = getTimePercent(segmentEnd, newest);
-      const startPercent = getTimePercent(segmentStart, newest);
       const endX = (endPercent) * width;
-      const startX = (startPercent) * width;
-      const segmentWidth = startX - endX;
 
       // evaluate received bit
       const actualBit = segmentBits[channelIndex];
@@ -1040,46 +1017,69 @@ function drawChannelData() {
         ctx,
         endX,
         channelIndex,
-        channelHeight,
-        segmentWidth,
+        channelCount,
+        height,
+        width,
         actualBit,
         expectedBit
-      )
+      );
 
-      // show bad value
-      // if(actualBit !== expectedBit) {
-        ctx.font = `${channelHeight}px Arial`;
-        const size = ctx.measureText(actualBit.toString());
-        const textHeight = size.actualBoundingBoxAscent + size.actualBoundingBoxDescent;
-        const centerChannel = top + (channelHeight / 2);
-        const textTop = centerChannel + (size.actualBoundingBoxAscent / 2);
-
-        overlays.push(() => {
-          ctx.strokeStyle = actualBit !== expectedBit ? 'black' : 'black';
-          ctx.lineWidth = 2;
-          ctx.strokeText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
-          ctx.fillStyle = actualBit !== expectedBit ? 'white' : 'white';
-          ctx.fillText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
-        })
-    
-      // }
-
+      overlays.push(() => {
+        drawChannelSegmentForeground(
+          ctx,
+          endX,
+          channelIndex,
+          channelCount,
+          height,
+          width,
+          actualBit,
+          expectedBit
+        );
+      });
     }
   }
-  drawChannelByteMarkers(ctx, channelCount, channelHeight, width);
+  drawChannelByteMarkers(ctx, channelCount, width, height);
   overlays.forEach(fn => fn());
-  drawChannelNumbers(ctx, channelCount, channelHeight)
+  drawChannelNumbers(ctx, channelCount, width, height)
   console.log('time', performance.now() - S);
+}
+function drawChannelSegmentForeground(
+  ctx,
+  endX,
+  channelIndex,
+  channelCount,
+  height,
+  width,
+  actualBit,
+  expectedBit
+) {
+  const channelHeight = height / channelCount;
+  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  let fontHeight = Math.min(24, channelHeight, segmentWidth);
+  let top = channelHeight * channelIndex;
+  ctx.font = `${fontHeight}px Arial`;
+  const size = ctx.measureText(actualBit.toString());
+  ctx.textBaseline = 'middle';
+  const textTop = top + (channelHeight / 2);
+  ctx.strokeStyle = actualBit !== expectedBit ? 'black' : 'black';
+  ctx.lineWidth = 2;
+  ctx.strokeText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
+  ctx.fillStyle = actualBit !== expectedBit ? 'white' : 'white';
+  ctx.fillText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
+
 }
 function drawChannelSegmentBackground(
   ctx,
   endX,
   channelIndex,
-  channelHeight,
-  segmentWidth,
+  channelCount,
+  height,
+  width,
   actualBit,
   expectedBit
 ) {
+  const channelHeight = height / channelCount;
+  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let top = channelHeight * channelIndex;
   // color red if received bit does not match expected bit
   ctx.fillStyle = actualBit === expectedBit ? 'green' : 'red';
@@ -1089,7 +1089,8 @@ function drawChannelSegmentBackground(
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
   ctx.strokeRect(endX, top, segmentWidth, channelHeight);
 }
-function drawChannelByteMarkers(ctx, channelCount, channelHeight, width) {
+function drawChannelByteMarkers(ctx, channelCount, width, height) {
+  const channelHeight = height / channelCount;
   for(let channelIndex = 8; channelIndex < channelCount; channelIndex+= 8) {
     let top = channelHeight * channelIndex;
     ctx.strokeStyle = 'black';
@@ -1100,8 +1101,10 @@ function drawChannelByteMarkers(ctx, channelCount, channelHeight, width) {
     ctx.stroke();
   }
 }
-function drawChannelNumbers(ctx, channelCount, channelHeight) {
-  let fontHeight = Math.min(24, channelHeight);
+function drawChannelNumbers(ctx, channelCount, width, height) {
+  const channelHeight = height / channelCount;
+  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  let fontHeight = Math.min(24, channelHeight, segmentWidth);
   ctx.font = `${fontHeight}px Arial`;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(0, 0, 0, .5)';
