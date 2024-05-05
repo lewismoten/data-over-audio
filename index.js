@@ -12,16 +12,17 @@ var receivedGraph;
 var receivedData = [];
 var MAX_DATA = 300;
 var pauseTimeoutId;
-var sampleIntervalId;
+var sampleIntervalIds = [];
+const SAMPLING_INTERVAL_COUNT = 3;
 
 var TEXT_TO_SEND = "U";
-var RANDOM_COUNT = 64;
-var MAX_BITS_DISPLAYED_ON_GRAPH = 58;
+var RANDOM_COUNT = 128;
+var MAX_BITS_DISPLAYED_ON_GRAPH = 78;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
 var AMPLITUDE_THRESHOLD = 160;
-var MINIMUM_FREQUENCY = 308;
-var MAXIMUM_FREQUENCY = 3400;
+var MINIMUM_FREQUENCY = 304;
+var MAXIMUM_FREQUENCY = 4800;
 var LAST_SEGMENT_PERCENT = 0.6;
 var FFT_SIZE_POWER = 10;
 var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
@@ -358,6 +359,7 @@ function sendBits(bits) {
   for(let i = 0; i < channelCount; i++) {
     var oscillator = audioContext.createOscillator();
     oscillator.connect(audioContext.destination);
+    oscillator.type = 'sawtooth';
     oscillators.push(oscillator);
   }
 
@@ -395,16 +397,23 @@ function sendBits(bits) {
 }
 function stopGraph() {
   PAUSE = true;
-  if(sampleIntervalId) {
-    window.clearInterval(sampleIntervalId);
-    sampleIntervalId = undefined;
+  stopCollectingSamples();
+}
+function startCollectingSamples() {
+  for(let i = 0; i < SAMPLING_INTERVAL_COUNT; i++) {
+    if(sampleIntervalIds[i]) continue;
+    sampleIntervalIds[i] = window.setInterval(collectSample, SAMPLE_DELAY_MS);
   }
+}
+function stopCollectingSamples() {
+  sampleIntervalIds.forEach(window.clearInterval);
+  sampleIntervalIds = sampleIntervalIds.map(() => {});
 }
 function resumeGraph() {
   if(isListeningCheckbox.checked) {
     if(PAUSE) {
       PAUSE = false;
-      sampleIntervalId = window.setInterval(collectSample, SAMPLE_DELAY_MS);
+      startCollectingSamples();
       resetGraphData();
       requestAnimationFrame(drawFrequencyData);  
     } else {
@@ -431,6 +440,10 @@ function getInteger(start, end, samples) {
 
 function collectSample() {
   const time = performance.now();
+  if(frequencyOverTime.length !== 0) {
+    // we already have this sample
+    if(time === frequencyOverTime[0].time) return;
+  }
   const frequencies = new Uint8Array(analyser.frequencyBinCount);
   const length = audioContext.sampleRate / analyser.fftSize;
   let processSegment = false;
@@ -517,7 +530,7 @@ function collectSample() {
 }
 
 function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
-  const bits = frequencyOverTime.filter(f => 
+  const samples = frequencyOverTime.filter(f => 
     f.segmentIndex === segmentIndex &&
     f.streamStarted === streamStarted
   );
@@ -527,7 +540,7 @@ function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
     low: 0,
     heard: 0
   }));
-  bits.forEach(({pairs}) => {
+  samples.forEach(({pairs}) => {
     pairs.forEach(({ highAmp, lowAmp, channel }) => {
       sums[channel].high += highAmp;
       sums[channel].low += lowAmp;
@@ -563,6 +576,8 @@ function processSegmentReceived(streamStarted, segmentIndex) {
   if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
 
   const bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex);
+  // let bitValues2 = GET_SEGMENT_BITS(streamStarted, segmentIndex);
+  // console.log(segmentIndex, bitValues.join('') === bitValues2.join(''), bitValues.join(''), bitValues2.join(''))
   packetReceivedBits.push(...bitValues);
 
   const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
@@ -814,7 +829,6 @@ function drawSegmentIndexes(ctx) {
   };
   if(streamEnded === -1) streamEnded = newest;
   let segmentIndex = 0;
-  ctx.fontSize = 24;
 
   // determine max segments to prevent infinite loop later
   let maxBits = ((1 << PACKET_SIZE_BITS) * 8) + PACKET_SIZE_BITS;
@@ -835,15 +849,17 @@ function drawSegmentIndexes(ctx) {
     if(rightX < 0) break; // in the future
 
     // Draw segment index
+    ctx.fontSize = '24px';
     let text = segmentIndex.toString();
     let size = ctx.measureText(text);
     let textX = leftX + (segmentWidth / 2) - (size.width / 2);
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
     ctx.textBaseline = 'bottom';
-    ctx.strokeText(text, textX, height);
+    let textY = segmentIndex % 2 === 0 ? height : height - 12;
+    ctx.strokeText(text, textX, textY);
     ctx.fillStyle = segmentStart > streamEnded ? 'grey' : 'white';
-    ctx.fillText(text, textX, height);
+    ctx.fillText(text, textX, textY);
 
     // draw sample count
     const sampleCount = frequencyOverTime
@@ -856,12 +872,15 @@ function drawSegmentIndexes(ctx) {
     text = sampleCount.toString();
     size = ctx.measureText(text);
     textX = leftX + (segmentWidth / 2) - (size.width / 2);
+    textY = segmentIndex % 2 === 0 ? 5 : 17;
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 2;
     ctx.textBaseline = 'top';
-    ctx.strokeText(text, textX, 5);
-    ctx.fillStyle = 'white';
-    ctx.fillText(text, textX, 5);
+    ctx.strokeText(text, textX, textY);
+    if(sampleCount === 0) ctx.fillStyle = 'red';
+    else if(sampleCount < 3) ctx.fillStyle = 'yellow';
+    else ctx.fillStyle = 'white';
+    ctx.fillText(text, textX, textY);
   
     segmentIndex++;
     // break out of potential infinite loop
