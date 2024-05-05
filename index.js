@@ -10,41 +10,44 @@ var receivedDataTextarea;
 var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
-var MAX_BITS_DISPLAYED_ON_GRAPH = 9;
 var MAX_DATA = 300;
 var pauseTimeoutId;
 var sampleIntervalId;
+
+var TEXT_TO_SEND = "U";
+var MAX_BITS_DISPLAYED_ON_GRAPH = 115;
+var SEGMENT_DURATION = 30;
+var AMPLITUDE_THRESHOLD_PERCENT = .75;
+var AMPLITUDE_THRESHOLD = 160;
+var MINIMUM_FREQUENCY = 308;
+var MAXIMUM_FREQUENCY = 3400;
+var LAST_SEGMENT_PERCENT = 0.6;
+var FFT_SIZE_POWER = 10;
+var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
+var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 
-// 20 to 20,000 - human
-var TEXT_TO_SEND = "Hello World!";
-var MINIMUM_FREQUENCY = 5000;
-var MAXIMUM_FREQUENCY = 10000;
-var FREQUENCY_DURATION = 60;
-var FREQUENCY_THRESHOLD_PERCENT = .75;
-var FREQUENCY_THRESHOLD = 150;
-var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
 var SAMPLE_DELAY_MS = 1;
-var FFT_POWER = 10;
-var LAST_BIT_PERCENT = 0.8;
-var SMOOTHING_TIME_CONSTANT = 0;
 var frequencyOverTime = [];
 var bitStart = [];
 var samplesPerBit = [];
 var bitSampleCount = 0;
 var PAUSE = false;
 var PAUSE_AFTER_END = true;
-var PACKET_SIZE_BITS = 10;
+var PACKET_SIZE_BITS = 8;
 
 var EXPECTED_ENCODED_BITS = [];
 var EXPECTED_BITS = [];
 var EXPECTED_TEXT = '';
 
-const packetBits = [];
+const packetReceivedBits = [];
 const packetDecodedBits = [];
 let packetDataByteCount = -1;
 
 function handleWindowLoad() {
+  const printable = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890`-=~!@#$%^&*()_+[]\\{}|;':\",./<>?";
+  TEXT_TO_SEND = new Array(128).fill(0).map(() => printable[Math.floor(Math.random() * printable.length)]).join('');
+
   // grab dom elements
   sendButton = document.getElementById('send-button');
   isListeningCheckbox = document.getElementById('is-listening-checkbox');
@@ -70,7 +73,7 @@ function handleWindowLoad() {
     showSpeed();
   })
   document.getElementById('bit-duration-text').addEventListener('input', (event) => {
-    FREQUENCY_DURATION = parseInt(event.target.value);
+    SEGMENT_DURATION = parseInt(event.target.value);
     bitSampleCount = 0;
     samplesPerBit.length = 0;
     showSpeed();
@@ -79,18 +82,18 @@ function handleWindowLoad() {
   document.getElementById('max-bits-displayed-on-graph').addEventListener('input', (event) => {
     MAX_BITS_DISPLAYED_ON_GRAPH = parseInt(event.target.value);
   })
-  document.getElementById('bit-duration-text').value = FREQUENCY_DURATION;
-  document.getElementById('amplitude-threshold-text').value = Math.floor(FREQUENCY_THRESHOLD_PERCENT * 100);
-  FREQUENCY_THRESHOLD = Math.floor(FREQUENCY_THRESHOLD_PERCENT * 255);
+  document.getElementById('bit-duration-text').value = SEGMENT_DURATION;
+  document.getElementById('amplitude-threshold-text').value = Math.floor(AMPLITUDE_THRESHOLD_PERCENT * 100);
+  AMPLITUDE_THRESHOLD = Math.floor(AMPLITUDE_THRESHOLD_PERCENT * 255);
   document.getElementById('maximum-frequency').value = MAXIMUM_FREQUENCY;
   document.getElementById('minimum-frequency').value = MINIMUM_FREQUENCY;
-  document.getElementById('last-bit-percent').value = Math.floor(LAST_BIT_PERCENT * 100);
-  document.getElementById('fft-size-power-text').value = FFT_POWER;
+  document.getElementById('last-bit-percent').value = Math.floor(LAST_SEGMENT_PERCENT * 100);
+  document.getElementById('fft-size-power-text').value = FFT_SIZE_POWER;
   document.getElementById('smoothing-time-constant-text').value = SMOOTHING_TIME_CONSTANT.toFixed(2);
 
   document.getElementById('amplitude-threshold-text').addEventListener('input', (event) => {
-    FREQUENCY_THRESHOLD_PERCENT = parseInt(event.target.value) / 100;
-    FREQUENCY_THRESHOLD = Math.floor(FREQUENCY_THRESHOLD_PERCENT * 255);
+    AMPLITUDE_THRESHOLD_PERCENT = parseInt(event.target.value) / 100;
+    AMPLITUDE_THRESHOLD = Math.floor(AMPLITUDE_THRESHOLD_PERCENT * 255);
   });
   document.getElementById('maximum-frequency').addEventListener('input', (event) => {
     MAXIMUM_FREQUENCY = parseInt(event.target.value);
@@ -101,11 +104,11 @@ function handleWindowLoad() {
     showSpeed();
   });
   document.getElementById('last-bit-percent').addEventListener('input', (event) => {
-    LAST_BIT_PERCENT = parseInt(event.target.value) / 100;
+    LAST_SEGMENT_PERCENT = parseInt(event.target.value) / 100;
   });
   document.getElementById('fft-size-power-text').addEventListener('input', (event) => {
-    FFT_POWER = parseInt(event.target.value);
-    if(analyser) analyser.fftSize = 2 ** FFT_POWER;
+    FFT_SIZE_POWER = parseInt(event.target.value);
+    if(analyser) analyser.fftSize = 2 ** FFT_SIZE_POWER;
     updateFrequencyResolution();
     resetGraphData();
   });
@@ -133,7 +136,7 @@ function handleTextToSendInput() {
   const totalBytes = Math.ceil(totalBits / 8);
   const channelCount = getChannels().length;
   const segmentCount = Math.ceil(totalBits / channelCount);
-  const totalDuration = ((segmentCount * FREQUENCY_DURATION) / 1000);
+  const totalDuration = ((segmentCount * SEGMENT_DURATION) / 1000);
 
   document.getElementById('error-correction-bits').innerText = errorCorrectionBits.toLocaleString();
   document.getElementById('data-bytes-to-send').innerText = dataByteCount.toLocaleString();
@@ -143,13 +146,13 @@ function handleTextToSendInput() {
   document.getElementById('duration-to-send').innerText = totalDuration.toLocaleString();
   document.getElementById('packet-send-channel-count').innerText = channelCount.toLocaleString();
   document.getElementById('packet-send-segment-count').innerText = segmentCount.toLocaleString();
-  document.getElementById('packet-send-segment-duration').innerText = (FREQUENCY_DURATION / 1000).toLocaleString();
+  document.getElementById('packet-send-segment-duration').innerText = (SEGMENT_DURATION / 1000).toLocaleString();
   document.getElementById('data-size-header-bits').innerText = PACKET_SIZE_BITS.toLocaleString();
 }
 
 function updateFrequencyResolution() {
   const sampleRate = getAudioContext().sampleRate;
-  const fftSize = 2 ** FFT_POWER;
+  const fftSize = 2 ** FFT_SIZE_POWER;
   const frequencyResolution = sampleRate / fftSize;
   const frequencyCount = (sampleRate/2) / frequencyResolution;
   document.getElementById('frequency-resolution').innerText = frequencyResolution.toFixed(2);
@@ -159,7 +162,7 @@ function updateFrequencyResolution() {
 }
 
 function showSpeed() {
-  const segmentsPerSecond = 1000 / FREQUENCY_DURATION;
+  const segmentsPerSecond = 1000 / SEGMENT_DURATION;
   const channels = getChannels();
   const bitsPerSegment = channels.length;
   const baud = bitsPerSegment * segmentsPerSecond;
@@ -192,7 +195,7 @@ function showSpeed() {
 }
 function drawChannels() {
   const sampleRate = getAudioContext().sampleRate;
-  const fftSize = 2 ** FFT_POWER;
+  const fftSize = 2 ** FFT_SIZE_POWER;
   const frequencyResolution = sampleRate / fftSize;
   //const frequencyCount = (sampleRate/2) / frequencyResolution;
   const channels = getChannels();
@@ -285,7 +288,7 @@ function getFrequency(bit) {
 function getChannels() {
   var audioContext = getAudioContext();
   const sampleRate = audioContext.sampleRate;
-  const fftSize = 2 ** FFT_POWER;
+  const fftSize = 2 ** FFT_SIZE_POWER;
   const frequencyResolution = sampleRate / fftSize;
   const channels = [];
   const pairStep = frequencyResolution * 2 * FREQUENCY_RESOLUTION_MULTIPLIER;
@@ -337,6 +340,8 @@ function sendBits(bits) {
     }
     document.getElementById('encoded-data').value = encodedBits.reduce(bitReducer, '');
     bits = encodedBits;
+  } else {
+    document.getElementById('encoded-data').value = bits.reduce(bitReducer, '');
   }
   EXPECTED_ENCODED_BITS = bits.slice();
 
@@ -359,7 +364,7 @@ function sendBits(bits) {
     const isHigh = bits[i];
     const channel = i % channelCount;
     const segment = Math.floor(i / channelCount);
-    var offset = ((segment * FREQUENCY_DURATION)/1000);
+    var offset = ((segment * SEGMENT_DURATION)/1000);
     oscillators[channel].frequency.setValueAtTime(
       channels[channel][isHigh ? 1 : 0],
       currentTime + offset
@@ -373,7 +378,7 @@ function sendBits(bits) {
   for(let i = bits.length; i < bits.length + channelCount; i++) {
     const channel = i % channelCount;
     const segment = Math.floor(i / channelCount);
-    const offset = ((segment * FREQUENCY_DURATION) / 1000);
+    const offset = ((segment * SEGMENT_DURATION) / 1000);
     oscillators[channel].stop(currentTime + offset);
   }
 
@@ -430,7 +435,7 @@ function collectSample() {
   analyser.getByteFrequencyData(frequencies);
   const data = {
     time,
-    frequencies,
+    frequencies: [...frequencies],
     length,
     streamEnded: priorStreamEnded
   };
@@ -438,8 +443,8 @@ function collectSample() {
   data.pairs = getChannels().map(([low, high], i) => {
     const lowAmp = frequencies[Math.round(low / length)];
     const highAmp = frequencies[Math.round(high / length)];
-    const isLow = lowAmp > FREQUENCY_THRESHOLD;
-    const isHigh = highAmp > FREQUENCY_THRESHOLD;
+    const isLow = lowAmp > AMPLITUDE_THRESHOLD;
+    const isHigh = highAmp > AMPLITUDE_THRESHOLD;
     if(isLow || isHigh ) hasSignal = true;
     return {
       channel: i,
@@ -463,13 +468,13 @@ function collectSample() {
       // new bit stream
       data.streamStarted = time;
       // clear last packet
-      packetBits.length = 0;
+      packetReceivedBits.length = 0;
       packetDataByteCount = 0;
     }
 
     // number of bit in the stream
-    const segmentIndex = data.segmentIndex = Math.floor((time - initialStreamStart) / FREQUENCY_DURATION);
-    if(priorSegmentIndex !== segmentIndex && priorSegmentIndex !== -1) {
+    const segmentIndex = data.segmentIndex = Math.floor((time - data.streamStarted) / SEGMENT_DURATION);
+    if(priorSegmentIndex !== segmentIndex && priorSegmentIndex > -1) {
       processSegment = true;
     }
   } else {
@@ -490,7 +495,7 @@ function collectSample() {
          pauseTimeoutId = window.setTimeout(() => {
           pauseTimeoutId = undefined;
           if(PAUSE_AFTER_END) stopGraph();
-        }, FREQUENCY_DURATION * 1.5);
+        }, SEGMENT_DURATION * 0.5);
       }
     } else {
       // continued stopping (or never started)
@@ -498,70 +503,73 @@ function collectSample() {
     }
   }
   frequencyOverTime.unshift(data);
-  if(processSegment) processSegmentReceived();
+  if(processSegment) processSegmentReceived(initialStreamStart, priorSegmentIndex);
   truncateGraphData();
 }
 
-function evaluateBit(samples, segment, channel) {
-  const started = samples.find(s => s.streamStarted > 0).streamStarted;
-  const bitSamples = samples.filter(sample => {
-    return sample.time >= started + (segment * FREQUENCY_DURATION) && 
-      sample.time < started + ((segment + 1) * FREQUENCY_DURATION)
-  }).map(samples => samples.pairs[channel])
-  .reduce((bitSamples, { lowAmp, highAmp }) => {
-    bitSamples.high += highAmp;
-    bitSamples.low += lowAmp;
-  }, {high: 0, low: 0});  
-  return bitSamples.high >= bitSamples.low ? 1 : 0;
-}
-
-function processSegmentReceived() {
-  const {
-    segmentIndex,
-    streamStarted,
-    pairs: {
-      length: channelCount
-    }
-  } = frequencyOverTime[0];
+function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
   const bits = frequencyOverTime.filter(f => 
     f.segmentIndex === segmentIndex &&
     f.streamStarted === streamStarted
   );
-  const bitEnded = bits[0].time;
-  const bitStarted = streamStarted + (FREQUENCY_DURATION * segmentIndex);
-  const bitDuration = bitEnded - bitStarted;
-
-  // if(bitDuration < FREQUENCY_DURATION * LAST_BIT_PERCENT) {
-  //   return;
-  // }
-
-  const channels = new Array(channelCount).fill(0).map(() => ({highAmp: 0, lowAmp: 0, isMissing: 0}));
-
+  const channelCount = frequencyOverTime[0].pairs.length;
+  const sums = new Array(channelCount).fill(0).map(() => ({
+    high: 0,
+    low: 0,
+    heard: 0
+  }));
   bits.forEach(({pairs}) => {
-
-    pairs.forEach(({ highAmp, lowAmp, isMissing }, i) => {
-      channels[i].highAmp += highAmp;
-      channels[i].lowAmp += lowAmp;
-      // else if(isMissing) channels[i].isMissing ++;
+    pairs.forEach(({ highAmp, lowAmp, channel }) => {
+      sums[channel].high += highAmp;
+      sums[channel].low += lowAmp;
+      if(highAmp > AMPLITUDE_THRESHOLD || lowAmp > AMPLITUDE_THRESHOLD) {
+        sums[channel].heard++;
+      }
     })
   });
-  const bitValues = channels.map(({highAmp, lowAmp, isMissing}) => {
-    return highAmp >= lowAmp ? 1 : 0;
-  });
+  const bitValues = sums.map(({high, low}) => high >= low ? 1 : 0);
+  // cut off silent bits
+  // const lastHeard = sums.lastIndexOf(s => s.heard !== 0);
+  const lastHeard = sums.length -1;
+  return bitValues.slice(0, lastHeard + 1);
+}
+function processSegmentReceived(streamStarted, segmentIndex) {
+  const {
+    pairs: {
+      length: channelCount
+    }
+  } = frequencyOverTime[0];
+  // is our segment long enough?
 
-  packetBits.push(...bitValues);
+  const samples = frequencyOverTime.filter(
+    fot => fot.streamStarted === streamStarted &&
+    fot.segmentIndex === segmentIndex
+  );
+  if(samples.length <= 1) return; // too short
+  const sampleEnd = samples[0].time;
+  const sampleStart = samples[samples.length-1].time;
+  const sampleDuration = sampleEnd - sampleStart;
+
+  // not long enough to qualify as a segment
+  if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
+
+  const bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex);
+
+
+console.log("%s Received: %s from %s samples", segmentIndex, bitValues.join(''), samples.length);
+  packetReceivedBits.push(...bitValues);
 
   const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
   if(HAMMING_ERROR_CORRECTION) {
     packetDecodedBits.length = 0;
-    for(let i = 0; i < packetBits.length; i += 7) {
-      const hamming = packetBits.slice(i, i + 7);
+    for(let i = 0; i < packetReceivedBits.length; i += 7) {
+      const hamming = packetReceivedBits.slice(i, i + 7);
       const nibble = hammingToNibble(hamming);
       packetDecodedBits.push(...nibble);
     }
   } else {
     packetDecodedBits.length = 0;
-    packetDecodedBits.push(...packetBits);
+    packetDecodedBits.push(...packetReceivedBits);
   }
 
   // Determine if we can identify the length of data comming
@@ -578,7 +586,7 @@ function processSegmentReceived() {
       // let's get the end time
       const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
       const segments = Math.ceil(totalBits / channelCount);
-      const duration = segments * FREQUENCY_DURATION;
+      const duration = segments * SEGMENT_DURATION;
       const streamEnded = streamStarted + duration;
       // console.log({
       //   tenBitNum: packetDecodedBits
@@ -600,19 +608,19 @@ function processSegmentReceived() {
     // }
     // remove phantom bits
     // const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
-    if(packetBits.length > totalBits) {
-      // const excess = packetBits.length % totalBits;
-      // packetBits.length = totalBits;
+    if(packetReceivedBits.length > totalBits) {
+      // const excess = packetReceivedBits.length % totalBits;
+      // packetReceivedBits.length = totalBits;
       // bitValues.length = bitValues.length - excess;
     }
   }
 
   document.getElementById('decoded-data').innerHTML = packetDecodedBits.reduce(bitExpectorReducer(EXPECTED_BITS), '');
-  document.getElementById('received-data').innerHTML = packetBits.reduce(bitExpectorReducer(EXPECTED_ENCODED_BITS), '');
+  document.getElementById('received-data').innerHTML = packetReceivedBits.reduce(bitExpectorReducer(EXPECTED_ENCODED_BITS), '');
 
   const encodedBitCount = EXPECTED_ENCODED_BITS.length;
   const decodedBitCount = EXPECTED_BITS.length;
-  const correctEncodedBits = packetBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
+  const correctEncodedBits = packetReceivedBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
   const correctedDecodedBits = packetDecodedBits.filter((b, i) => i < decodedBitCount && b === EXPECTED_BITS[i]).length;
   document.getElementById('received-data-error-percent').innerText = (
     Math.floor((1 - (correctEncodedBits / encodedBitCount)) * 1000) * 0.1
@@ -635,7 +643,7 @@ const bitExpectorReducer = expected => (all, bit, i) => {
   } else if(expected[i] !== bit) {
     all += '<span class="bit-wrong">';
   }
-  all += bit;
+  all += bit.toString();
   if(i >= expected.length || expected[i] !== bit) {
     all += '</span>';
   }
@@ -665,7 +673,7 @@ function resetGraphData() {
   bitStart.length = 0;
 }
 function truncateGraphData() {
-  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   const now = performance.now();
   let length = frequencyOverTime.length;
   while(length !== 0) {
@@ -713,7 +721,7 @@ function handleListeningCheckbox(e) {
     microphoneNode = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
     analyser.smoothingTimeConstant = SMOOTHING_TIME_CONSTANT;
-    analyser.fftSize = 2 ** FFT_POWER;
+    analyser.fftSize = 2 ** FFT_SIZE_POWER;
     microphoneNode.connect(analyser);
     resumeGraph();
   }
@@ -765,22 +773,13 @@ let lastSegmentIndex = 0;
 
 function canHear(hz, {frequencies, length}) {
   var i = Math.round(hz / length);
-  return frequencies[i] > FREQUENCY_THRESHOLD;
+  return frequencies[i] > AMPLITUDE_THRESHOLD;
 }
 function amplitude(hz, {frequencies, length}) {
   var i = Math.round(hz / length);
   return frequencies[i];
 }
 const sum = (total, value) => total + value;
-
-// function evaluateBit(highBits, lowBits) {
-//   let highCount = highBits.reduce(
-//     (count, highAmplitude, i) => 
-//       count += highAmplitude > lowBits[i] ? 1 : 0
-//     , 0
-//   );
-//   return highCount >= (highBits.length / 2) ? '1' : '0';
-// }
 
 function avgLabel(array) {
   const values = array.filter(v => v > 0);
@@ -790,7 +789,7 @@ function avgLabel(array) {
 function drawBitDurationLines(ctx, color) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
-  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
 
   const streamTimes = frequencyOverTime.filter(({
     streamStarted
@@ -808,7 +807,7 @@ function drawBitDurationLines(ctx, color) {
 
   ctx.strokeStyle = color;
   streamTimes.forEach(({ streamStarted, streamEnded = newest}) => {
-    for(let time = streamStarted; time < streamEnded; time += FREQUENCY_DURATION) {
+    for(let time = streamStarted; time < streamEnded; time += SEGMENT_DURATION) {
       if(newest - time > duration) continue;
       const x = ((newest - time) / duration) * width;
       ctx.beginPath();
@@ -828,7 +827,7 @@ function drawBitDurationLines(ctx, color) {
 function drawBitStart(ctx, color) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
-  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   ctx.strokeStyle = color;
   for(let i = 0; i < bitStart.length; i++) {
     if(!bitStart[i]) continue;
@@ -849,11 +848,15 @@ function getPercentY(percent) {
   const { height } = receivedGraph;
   return (1 - percent) * height;
 }
-function drawFrequencyLineGraph(ctx, hz, color) {
+function drawFrequencyLineGraph(ctx, hz, color, lineWidth, dashed) {
   const { width, height } = receivedGraph;
   const newest = frequencyOverTime[0].time;
-  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  if(dashed) {
+    ctx.setLineDash([5, 5]);
+  }
   ctx.beginPath();
   for(let i = 0; i < frequencyOverTime.length; i++) {
     const {frequencies, time, length} = frequencyOverTime[i];
@@ -864,6 +867,9 @@ function drawFrequencyLineGraph(ctx, hz, color) {
     if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.stroke();
+  if(dashed) {
+    ctx.setLineDash([]);
+  }
 }
 function drawFrequencyDots(ctx, hz, color) {
   const newest = frequencyOverTime[0].time;
@@ -893,7 +899,7 @@ function getTimeX(time, newest) {
   return getTimePercent(time, newest) * receivedGraph.width;
 }
 function getTimePercent(time, newest) {
-  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
   if(newest - time > duration) return -1;
   return ((newest - time) / duration);
 }
@@ -905,7 +911,7 @@ function drawChannelData() {
   ctx.fillRect(0, 0, width, height);
 
   const sampleRate = getAudioContext().sampleRate;
-  const fftSize = 2 ** FFT_POWER;
+  const fftSize = 2 ** FFT_SIZE_POWER;
   const frequencyResolution = sampleRate / fftSize;
   //const frequencyCount = (sampleRate/2) / frequencyResolution;
   const channels = getChannels();
@@ -917,63 +923,103 @@ function drawChannelData() {
   const frequencySegments = Math.floor(nyquistFrequency / frequencyResolution);
 
   const newest = frequencyOverTime[0].time;
-  const duration = FREQUENCY_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const overlays = [];
 
   for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
     const [low, high] = channels[channelIndex];
     let top = channelHeight * channelIndex;
 
-    ctx.fillStyle = channelIndex % 2 === 0 ? 'black' : 'white';
+    // ctx.fillStyle = channelIndex % 2 === 0 ? 'black' : 'white';
     // ctx.fillRect(0, top, width, channelHeight);
 
     // Data
-    ctx.strokeStyle = 'blue';
-    for(let i = 0; i < frequencyOverTime.length; i++) {
-      const {frequencies, time, length, hasSignal, segmentIndex, pairs
-      } = frequencyOverTime[i];
-      if(!hasSignal) continue;
+    // ctx.strokeStyle = 'blue';
 
-      const x1 = getTimePercent(time, newest) * width;
-      if(x1 === -1) continue;
-      const x2 = i < frequencyOverTime.length - 1 ? getTimePercent(frequencyOverTime[i + 1].time, newest) * width : width;
-      const sampleWidth = x2 - x1;
-      // const amplitude = hzAmplitude(hz, length, frequencies);
-      ctx.beginPath();
+    const segmentDurationS = SEGMENT_DURATION;
 
-      // what should the bit be for this channel?
+    // Segments
+    const segmentCount = Math.ceil(EXPECTED_ENCODED_BITS.length / channelCount);
+    const lastStream = frequencyOverTime.find(fot => fot.hasSignal);
+    const streamStarted = lastStream?.streamStarted ?? newest;
+    const lastSegmentIndex = lastStream?.segmentIndex ?? segmentCount;
+    const oldest = newest - (segmentDurationS * MAX_BITS_DISPLAYED_ON_GRAPH);
+  
+    // Show segments with wrong bits
+    for(let segmentIndex = 0; segmentIndex <= lastSegmentIndex; segmentIndex++) {
+      const segmentBits = GET_SEGMENT_BITS(streamStarted, segmentIndex);
+      if(channelIndex >= segmentBits.length) continue; // past received/heard bits
       const bitIndex = (segmentIndex * channelCount) + channelIndex;
-      const expectedBit = packetBits[bitIndex];
+      if(bitIndex >= EXPECTED_ENCODED_BITS.length) continue; // past data stream
+      const segmentStart = streamStarted + (segmentIndex * segmentDurationS);
+      if(segmentStart > newest) break; // too far in the future
+      const segmentEnd = segmentStart + segmentDurationS;
+      if(segmentEnd < oldest) continue; // to far in the past
+      const endPercent = getTimePercent(segmentEnd, newest);
+      const startPercent = getTimePercent(segmentStart, newest);
+      const endX = (endPercent) * width;
+      const startX = (startPercent) * width;
+      const segmentWidth = startX - endX;
 
-      // what is the bit?
-      const {
-        channel,
-        lowHz,
-        highHz,
-        isMissing,
-        isHigh
-      } = pairs[channelIndex];
-      const actualBit = isHigh ? 1 : 0;
+      // evaluate received bit
+      const actualBit = segmentBits[channelIndex];
+      // identify expected bit
+      const expectedBit = EXPECTED_ENCODED_BITS[bitIndex];
 
+      // color red if received bit does not match expected bit
       ctx.fillStyle = actualBit === expectedBit ? 'green' : 'red';
-      ctx.fillRect(x1, top, sampleWidth,channelHeight);
+      ctx.fillRect(endX, top, segmentWidth, channelHeight);
 
       ctx.lineWidth = 0.5;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.strokeRect(x1, top, sampleWidth, channelHeight);
-      ctx.stroke();
+      ctx.strokeRect(endX, top, segmentWidth, channelHeight);
+
+      // show bad value
+      // if(actualBit !== expectedBit) {
+        ctx.font = `${channelHeight}px Arial`;
+        const size = ctx.measureText(actualBit.toString());
+        const textHeight = size.actualBoundingBoxAscent + size.actualBoundingBoxDescent;
+        const centerChannel = top + (channelHeight / 2);
+        const textTop = centerChannel + (size.actualBoundingBoxAscent / 2);
+
+        overlays.push(() => {
+          ctx.strokeStyle = actualBit !== expectedBit ? 'black' : 'black';
+          ctx.lineWidth = 2;
+          ctx.strokeText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
+          ctx.fillStyle = actualBit !== expectedBit ? 'white' : 'white';
+          ctx.fillText(actualBit.toString(), endX + (segmentWidth/2) - (size.width / 2), textTop);
+        })
+    
+      // }
+
     }
 
+    // for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
+    //   const [low, high] = channels[channelIndex];
+    //   let top = channelHeight * channelIndex;
+    if(channelIndex % 8 === 0) {
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, top-1);
+      ctx.lineTo(width, top-1);
+      ctx.stroke();
+    }
+      
     // channel number
     ctx.font = `${channelHeight}px Arial`;
     const size = ctx.measureText(channelIndex);
     const textHeight = size.fontBoundingBoxAscent + size.fontBoundingBoxDescent;
-    const textTop = top;//(top + (channelHeight / 2)) - (textHeight/2);
-    ctx.fillStyle = 'red';
+    const textTop = top + (channelHeight / 2) + (size.actualBoundingBoxAscent / 2);
+    // const textTop = top;//(top + (channelHeight / 2)) - (textHeight/2);
+    const hue = channelHue(channelIndex, channelCount);
+    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+
     ctx.fillText(channelIndex, 5, textTop);
 
 
   }
-
+  overlays.forEach(fn => fn());
 
 }
 function drawFrequencyData() {
@@ -988,7 +1034,7 @@ function drawFrequencyData() {
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, width, height);
   
-  const thresholdY = (1 - (FREQUENCY_THRESHOLD/MAX_DATA)) * height;
+  const thresholdY = (1 - (AMPLITUDE_THRESHOLD/MAX_DATA)) * height;
   ctx.strokeStyle = 'grey';
   ctx.beginPath();
   ctx.moveTo(0, thresholdY);
@@ -998,16 +1044,16 @@ function drawFrequencyData() {
   drawBitStart(ctx, 'green');
   const frequencies = getChannels();
   frequencies.forEach(([low, high], i) => {
-    if(i >= frequencies.length - 1) {
-      drawFrequencyLineGraph(ctx, high, 'pink');
-      drawFrequencyLineGraph(ctx, low, 'cyan');
-    } else {
-      drawFrequencyLineGraph(ctx, high, 'rgba(255, 0, 0, .5)');
-      drawFrequencyLineGraph(ctx, low, 'rgba(0, 0, 255, .5)');
-    }
+    const hue = channelHue(i, frequencies.length);
+    drawFrequencyLineGraph(ctx, high, `hsl(${hue}, 100%, 50%)`, 2, false);
+    drawFrequencyLineGraph(ctx, low, `hsl(${hue}, 100%, 25%)`, 1, true);
   });
 
   requestAnimationFrame(drawFrequencyData);
+}
+
+function channelHue(channelId, channelCount) {
+  return Math.floor((channelId / channelCount) * 360);
 }
 
 function drawReceivedData() {
