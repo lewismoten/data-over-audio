@@ -15,7 +15,8 @@ var pauseTimeoutId;
 var sampleIntervalId;
 
 var TEXT_TO_SEND = "U";
-var MAX_BITS_DISPLAYED_ON_GRAPH = 115;
+var RANDOM_COUNT = 64;
+var MAX_BITS_DISPLAYED_ON_GRAPH = 58;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
 var AMPLITUDE_THRESHOLD = 160;
@@ -27,6 +28,7 @@ var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
 var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 
+var LAST_STREAM_STARTED;
 var SAMPLE_DELAY_MS = 1;
 var frequencyOverTime = [];
 var bitStart = [];
@@ -46,7 +48,7 @@ let packetDataByteCount = -1;
 
 function handleWindowLoad() {
   const printable = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890`-=~!@#$%^&*()_+[]\\{}|;':\",./<>?";
-  TEXT_TO_SEND = new Array(128).fill(0).map(() => printable[Math.floor(Math.random() * printable.length)]).join('');
+  TEXT_TO_SEND = new Array(RANDOM_COUNT).fill(0).map(() => printable[Math.floor(Math.random() * printable.length)]).join('');
 
   // grab dom elements
   sendButton = document.getElementById('send-button');
@@ -209,7 +211,7 @@ function drawChannels() {
   const nyquistFrequency = audioContext.sampleRate / 2;
   const frequencySegments = Math.floor(nyquistFrequency / frequencyResolution);
 
-  for(let i = 0; i < channelCount; i++) {//xxx
+  for(let i = 0; i < channelCount; i++) {
     const [low, high] = channels[i];
     let top = channelHeight * i;
     ctx.fillStyle = 'black';
@@ -365,9 +367,14 @@ function sendBits(bits) {
     const channel = i % channelCount;
     const segment = Math.floor(i / channelCount);
     var offset = ((segment * SEGMENT_DURATION)/1000);
+    var offset2 = (((segment+1) * SEGMENT_DURATION)/1000) - (1/100000);
     oscillators[channel].frequency.setValueAtTime(
       channels[channel][isHigh ? 1 : 0],
       currentTime + offset
+    );
+    oscillators[channel].frequency.setValueAtTime(
+      channels[channel][isHigh ? 1 : 0],
+      currentTime + offset2
     );
   }
 
@@ -379,6 +386,7 @@ function sendBits(bits) {
     const channel = i % channelCount;
     const segment = Math.floor(i / channelCount);
     const offset = ((segment * SEGMENT_DURATION) / 1000);
+    oscillators[channel].frequency.setValueAtTime(0, currentTime + offset);
     oscillators[channel].stop(currentTime + offset);
   }
 
@@ -467,6 +475,7 @@ function collectSample() {
     } else {
       // new bit stream
       data.streamStarted = time;
+      LAST_STREAM_STARTED = time;
       // clear last packet
       packetReceivedBits.length = 0;
       packetDataByteCount = 0;
@@ -554,9 +563,6 @@ function processSegmentReceived(streamStarted, segmentIndex) {
   if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
 
   const bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex);
-
-
-console.log("%s Received: %s from %s samples", segmentIndex, bitValues.join(''), samples.length);
   packetReceivedBits.push(...bitValues);
 
   const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
@@ -660,14 +666,21 @@ const textExpectorReducer = expected => (all, bit, i, bits) => {
     const char = String.fromCharCode(ascii);
     const charIndex = Math.floor((i - PACKET_SIZE_BITS) / 8);
     if(char !== expected[charIndex]) {
-      all += '<span class="bit-wrong">' + char + '</span>';
+      all += '<span class="bit-wrong">' + htmlEncode(printable(char)) + '</span>';
     } else {
-      all += char;
+      all += htmlEncode(printable(char));
     }
   }
   return all;
 }
-
+function printable(text) {
+  return text.replace(/[\x00-\x1f\x7f-\x9f]/g, '.');
+}
+function htmlEncode(text) {
+  const element = document.createElement('div');
+  element.textContent = text;
+  return element.innerHTML;
+}
 function resetGraphData() {
   frequencyOverTime.length = 0;
   bitStart.length = 0;
@@ -785,6 +798,75 @@ function avgLabel(array) {
   const values = array.filter(v => v > 0);
   if(values.length === 0) return 'N/A';
   return (values.reduce((t, v) => t + v, 0) / values.length).toFixed(2)
+}
+function drawSegmentIndexes(ctx) {
+  if(!LAST_STREAM_STARTED) return;
+  const { width, height } = receivedGraph;
+  const fot = frequencyOverTime.find(fot => fot.streamStarted === LAST_STREAM_STARTED);
+  const newest = frequencyOverTime[0].time;
+  const channelCount = frequencyOverTime[0].pairs.length;
+  let {
+    streamStarted,
+    streamEnded = newest
+  } = fot ?? {
+    streamStarted: LAST_STREAM_STARTED,
+    streamEnded: newest
+  };
+  if(streamEnded === -1) streamEnded = newest;
+  let segmentIndex = 0;
+  ctx.fontSize = 24;
+
+  // determine max segments to prevent infinite loop later
+  let maxBits = ((1 << PACKET_SIZE_BITS) * 8) + PACKET_SIZE_BITS;
+  if(HAMMING_ERROR_CORRECTION) maxBits *= 7/4;
+  let maxSegments = Math.ceil(maxBits / channelCount);
+
+  // loop through each index
+  while(true) {
+    let segmentStart = streamStarted + (segmentIndex * SEGMENT_DURATION);
+    // if(segmentStart > streamEnded) break; // stream ended
+
+    let segmentEnd = segmentStart + SEGMENT_DURATION;
+    // find where the index is on the graph
+    const rightX = getTimeX(segmentStart, newest);
+    const leftX = getTimeX(segmentEnd, newest);
+    const segmentWidth = rightX - leftX;
+    if(leftX > width) continue; // too far in past
+    if(rightX < 0) break; // in the future
+
+    // Draw segment index
+    let text = segmentIndex.toString();
+    let size = ctx.measureText(text);
+    let textX = leftX + (segmentWidth / 2) - (size.width / 2);
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.textBaseline = 'bottom';
+    ctx.strokeText(text, textX, height);
+    ctx.fillStyle = segmentStart > streamEnded ? 'grey' : 'white';
+    ctx.fillText(text, textX, height);
+
+    // draw sample count
+    const sampleCount = frequencyOverTime
+      .filter(fot => 
+        fot.streamStarted === streamStarted && 
+        fot.segmentIndex === segmentIndex
+      )
+      .length;
+
+    text = sampleCount.toString();
+    size = ctx.measureText(text);
+    textX = leftX + (segmentWidth / 2) - (size.width / 2);
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 2;
+    ctx.textBaseline = 'top';
+    ctx.strokeText(text, textX, 5);
+    ctx.fillStyle = 'white';
+    ctx.fillText(text, textX, 5);
+  
+    segmentIndex++;
+    // break out of potential infinite loop
+    if(segmentIndex >= maxSegments) break;
+  }
 }
 function drawBitDurationLines(ctx, color) {
   const { width, height } = receivedGraph;
@@ -1048,6 +1130,7 @@ function drawFrequencyData() {
     drawFrequencyLineGraph(ctx, high, `hsl(${hue}, 100%, 50%)`, 2, false);
     drawFrequencyLineGraph(ctx, low, `hsl(${hue}, 100%, 25%)`, 1, true);
   });
+  drawSegmentIndexes(ctx);
 
   requestAnimationFrame(drawFrequencyData);
 }
