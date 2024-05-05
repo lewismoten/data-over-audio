@@ -13,7 +13,6 @@ var receivedData = [];
 var MAX_DATA = 300;
 var pauseTimeoutId;
 var sampleIntervalIds = [];
-const SAMPLING_INTERVAL_COUNT = 3;
 
 var TEXT_TO_SEND = "U";
 var RANDOM_COUNT = 128;
@@ -31,6 +30,7 @@ var HAMMING_ERROR_CORRECTION = true;
 
 var LAST_STREAM_STARTED;
 var SAMPLE_DELAY_MS = 1;
+const SAMPLING_INTERVAL_COUNT = 2;
 var frequencyOverTime = [];
 var bitStart = [];
 var samplesPerBit = [];
@@ -402,7 +402,10 @@ function stopGraph() {
 function startCollectingSamples() {
   for(let i = 0; i < SAMPLING_INTERVAL_COUNT; i++) {
     if(sampleIntervalIds[i]) continue;
-    sampleIntervalIds[i] = window.setInterval(collectSample, SAMPLE_DELAY_MS);
+    sampleIntervalIds[i] = window.setInterval(
+      collectSample,
+      SAMPLE_DELAY_MS + (i/SAMPLING_INTERVAL_COUNT)
+    );
   }
 }
 function stopCollectingSamples() {
@@ -423,21 +426,6 @@ function resumeGraph() {
     PAUSE = false;
   }
 }
-function getInteger(start, end, samples) {
-  let value = 0;
-  let valueIndex = 0;
-  for(let i = 0; i < samples.length; i++) {
-    for(let j = 0; j < samples[i].pairs.length; j++) {
-      if(b >= start) {
-        value += getBit(samples[i].pairs[j]) << valueIndex++;
-        if(b >= end) return bits;
-      }
-      b++;
-    }
-  }
-  return bits;
-}
-
 function collectSample() {
   const time = performance.now();
   if(frequencyOverTime.length !== 0) {
@@ -445,6 +433,7 @@ function collectSample() {
     if(time === frequencyOverTime[0].time) return;
   }
   const frequencies = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(frequencies);
   const length = audioContext.sampleRate / analyser.fftSize;
   let processSegment = false;
   const {
@@ -453,7 +442,6 @@ function collectSample() {
     streamEnded: priorStreamEnded = -1,
     segmentIndex: priorSegmentIndex = -1
   } = frequencyOverTime[0] ?? {}
-  analyser.getByteFrequencyData(frequencies);
   const data = {
     time,
     frequencies: [...frequencies],
