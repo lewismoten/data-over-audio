@@ -1036,13 +1036,15 @@ function drawChannelData() {
       // identify expected bit
       const expectedBit = EXPECTED_ENCODED_BITS[bitIndex];
 
-      // color red if received bit does not match expected bit
-      ctx.fillStyle = actualBit === expectedBit ? 'green' : 'red';
-      ctx.fillRect(endX, top, segmentWidth, channelHeight);
-
-      ctx.lineWidth = 0.5;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.strokeRect(endX, top, segmentWidth, channelHeight);
+      drawChannelSegmentBackground(
+        ctx,
+        endX,
+        channelIndex,
+        channelHeight,
+        segmentWidth,
+        actualBit,
+        expectedBit
+      )
 
       // show bad value
       // if(actualBit !== expectedBit) {
@@ -1068,6 +1070,24 @@ function drawChannelData() {
   overlays.forEach(fn => fn());
   drawChannelNumbers(ctx, channelCount, channelHeight)
   console.log('time', performance.now() - S);
+}
+function drawChannelSegmentBackground(
+  ctx,
+  endX,
+  channelIndex,
+  channelHeight,
+  segmentWidth,
+  actualBit,
+  expectedBit
+) {
+  let top = channelHeight * channelIndex;
+  // color red if received bit does not match expected bit
+  ctx.fillStyle = actualBit === expectedBit ? 'green' : 'red';
+  ctx.fillRect(endX, top, segmentWidth, channelHeight);
+
+  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.strokeRect(endX, top, segmentWidth, channelHeight);
 }
 function drawChannelByteMarkers(ctx, channelCount, channelHeight, width) {
   for(let channelIndex = 8; channelIndex < channelCount; channelIndex+= 8) {
