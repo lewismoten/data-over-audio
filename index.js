@@ -1063,19 +1063,22 @@ function drawChannelData() {
       // }
 
     }
-
-    if(channelIndex % 8 === 0) {
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(0, top-1);
-      ctx.lineTo(width, top-1);
-      ctx.stroke();
-    }
   }
+  drawChannelByteMarkers(ctx, channelCount, channelHeight, width);
   overlays.forEach(fn => fn());
   drawChannelNumbers(ctx, channelCount, channelHeight)
   console.log('time', performance.now() - S);
+}
+function drawChannelByteMarkers(ctx, channelCount, channelHeight, width) {
+  for(let channelIndex = 8; channelIndex < channelCount; channelIndex+= 8) {
+    let top = channelHeight * channelIndex;
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, top);
+    ctx.lineTo(width, top);
+    ctx.stroke();
+  }
 }
 function drawChannelNumbers(ctx, channelCount, channelHeight) {
   let fontHeight = Math.min(24, channelHeight);
