@@ -20,14 +20,15 @@ var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
 var AMPLITUDE_THRESHOLD = 160;
-var MINIMUM_FREQUENCY = 323;
-var MAXIMUM_FREQUENCY = 9226;
+var MINIMUM_FREQUENCY = 80;
+var MAXIMUM_FREQUENCY = 18017;
 var LAST_SEGMENT_PERCENT = 0.6;
-var FFT_SIZE_POWER = 10;
+var FFT_SIZE_POWER = 9;
 var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
 let CHANNEL_FREQUENCY_RESOLUTION_PADDING = 2;
 var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
+let PERIODIC_INTERLEAVING = true;
 
 let CHANNEL_OVER = -1;
 let CHANNEL_SELECTED = -1;
@@ -51,6 +52,7 @@ var EXPECTED_BITS = [];
 var EXPECTED_TEXT = '';
 
 const packetReceivedBits = [];
+const packetUninterlievedBits = [];
 const packetDecodedBits = [];
 let packetDataByteCount = -1;
 
@@ -79,6 +81,10 @@ function handleWindowLoad() {
     HAMMING_ERROR_CORRECTION = event.target.checked;
     showSpeed();
   })
+  document.getElementById('periodic-interleaving').checked = PERIODIC_INTERLEAVING;
+  document.getElementById('periodic-interleaving').addEventListener('change', event => {
+    PERIODIC_INTERLEAVING = event.target.checked;
+  });
   document.getElementById('pause-after-end').addEventListener('change', event => {
     PAUSE_AFTER_END = event.target.checked;
     if(!PAUSE_AFTER_END) resumeGraph();
@@ -310,6 +316,56 @@ function hammingToNibble(hamming) {
 function getFrequency(bit) {
   return bit ? MAXIMUM_FREQUENCY : MINIMUM_FREQUENCY;
 }
+function removeInterleaving(bits) {
+  return applyInterleaving(bits);
+}
+function applyInterleaving(bits) {
+  if(!PERIODIC_INTERLEAVING) return bits;
+  const channels = getChannels();
+  const channelCount = channels.length;
+  // We need at least 4 channels to swap odd numbered bits
+  if(channelCount < 4) return bits;
+  // Determine what the center channel index is
+  const centerIndex = Math.floor(channelCount / 2);
+  if(centerIndex % 2 === 1) centerIndex++;
+
+  // ensure last segment has enough bits to swap
+  while(bits.length % channelCount !== 0) bits.push(0);
+
+  // Loop through each segment
+  for(let i = 0; i < bits.length; i+= channelCount) {
+
+    // Grab the bits for the segment
+    const segment = bits.slice(i, i + channelCount);
+
+    // Loop through the odd bits up to the center channel
+    for(let fromIndex = 1; fromIndex < centerIndex; fromIndex += 2) {
+      // Identify the target bit to swap
+      const targetIndex = (fromIndex + centerIndex);
+
+      // remember the bits
+      const bitA = segment[fromIndex];
+      const bitB = segment[targetIndex];
+
+      // swap the bits
+      segment[targetIndex] = bitA;
+      segment[fromIndex] = bitB;
+    }
+    // update the bits with the modified segment
+    bits.splice(i, channelCount, ...segment);
+  }
+  return bits;
+}
+function applyErrorCorrection(bits) {
+  if(!HAMMING_ERROR_CORRECTION) return bits;
+  const encodedBits = [];
+  for(let i = 0; i < bits.length; i+= 4) {
+    const nibble = bits.slice(i, i + 4);
+    while(nibble.length < 4) nibble.push(0);
+    encodedBits.push(...nibbleToHamming(bits.slice(i, i + 4)));
+  }
+  return encodedBits;
+}
 function getChannels() {
   var audioContext = getAudioContext();
   const sampleRate = audioContext.sampleRate;
@@ -356,19 +412,10 @@ function sendBits(bits) {
 
   document.getElementById('sent-data').value = bits.reduce(bitReducer, '');
 
-  if(HAMMING_ERROR_CORRECTION) {
-    const encodedBits = [];
-    for(let i = 0; i < bits.length; i+= 4) {
-      const nibble = bits.slice(i, i + 4);
-      while(nibble.length < 4) nibble.push(0);
-      encodedBits.push(...nibbleToHamming(bits.slice(i, i + 4)));
-    }
-    document.getElementById('encoded-data').value = encodedBits.reduce(bitReducer, '');
-    bits = encodedBits;
-  } else {
-    document.getElementById('encoded-data').value = bits.reduce(bitReducer, '');
-  }
-  EXPECTED_ENCODED_BITS = bits.slice();
+  EXPECTED_ENCODED_BITS = bits = applyInterleaving(
+    applyErrorCorrection(bits)
+  );
+  document.getElementById('encoded-data').value = EXPECTED_ENCODED_BITS.reduce(bitReducer, '');
 
   var audioContext = getAudioContext();
   const channels = getChannels();
@@ -496,6 +543,7 @@ function collectSample() {
         LAST_STREAM_STARTED = time;
         // clear last packet
         packetReceivedBits.length = 0;
+        packetUninterlievedBits.length = 0;
         packetDataByteCount = 0;
       }
     }
@@ -535,7 +583,7 @@ function collectSample() {
   truncateGraphData();
 }
 
-function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
+function GET_SEGMENT_BITS(streamStarted, segmentIndex, originalOrder = false) {
   const samples = frequencyOverTime.filter(f => 
     f.segmentIndex === segmentIndex &&
     f.streamStarted === streamStarted
@@ -556,7 +604,7 @@ function GET_SEGMENT_BITS(streamStarted, segmentIndex) {
     });
   });
   const bitValues = sums.map((amps) => amps[0] > amps[1] ? 0 : 1);
-  return bitValues;
+  return originalOrder ? bitValues : removeInterleaving(bitValues);
 }
 function processSegmentReceived(streamStarted, segmentIndex) {
   const {
@@ -584,21 +632,22 @@ const sampleDuration = (sampleEnd - sampleStart) + MINIMUM_INTERVAL_MS;
 // not long enough to qualify as a segment
 if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
 
-    bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex);
+    bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex, true);
   }
   packetReceivedBits.push(...bitValues);
+  packetUninterlievedBits.push(...removeInterleaving(bitValues));
 
   const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
   if(HAMMING_ERROR_CORRECTION) {
     packetDecodedBits.length = 0;
-    for(let i = 0; i < packetReceivedBits.length; i += 7) {
-      const hamming = packetReceivedBits.slice(i, i + 7);
+    for(let i = 0; i < packetUninterlievedBits.length; i += 7) {
+      const hamming = packetUninterlievedBits.slice(i, i + 7);
       const nibble = hammingToNibble(hamming);
       packetDecodedBits.push(...nibble);
     }
   } else {
     packetDecodedBits.length = 0;
-    packetDecodedBits.push(...packetReceivedBits);
+    packetDecodedBits.push(...packetUninterlievedBits);
   }
 
   // Determine if we can identify the length of data comming
@@ -1078,7 +1127,7 @@ function drawChannelData() {
     const leftX = ((latest - segmentEnd) / graphDuration) * width;
 
     // what bits did we receive for the segment?
-    const segmentBits = GET_SEGMENT_BITS(LAST_STREAM_STARTED, segmentIndex);
+    const segmentBits = GET_SEGMENT_BITS(LAST_STREAM_STARTED, segmentIndex, true);
 
     // draw segment data background
     let expectedBitCount = channelCount;
