@@ -792,57 +792,57 @@ function avgLabel(array) {
   if(values.length === 0) return 'N/A';
   return (values.reduce((t, v) => t + v, 0) / values.length).toFixed(2)
 }
-function drawSegmentIndexes(ctx) {
+function drawSegmentIndexes(ctx, width, height) {
+  const now = performance.now();
+
+  // Do/did we have a stream?
   if(!LAST_STREAM_STARTED) return;
-  const { width, height } = receivedGraph;
-  const fot = frequencyOverTime.find(fot => fot.streamStarted === LAST_STREAM_STARTED);
-  const newest = frequencyOverTime[0].time;
-  const channelCount = frequencyOverTime[0].pairs.length;
-  let {
-    streamStarted,
-    streamEnded = newest
-  } = fot ?? {
-    streamStarted: LAST_STREAM_STARTED,
-    streamEnded: newest
-  };
-  if(streamEnded === -1) streamEnded = newest;
-  let segmentIndex = 0;
 
-  // determine max segments to prevent infinite loop later
-  let maxBits = ((1 << PACKET_SIZE_BITS) * 8) + PACKET_SIZE_BITS;
-  if(HAMMING_ERROR_CORRECTION) maxBits *= 7/4;
-  let maxSegments = Math.ceil(maxBits / channelCount);
+  // will any of the stream appear?
+  const packetDuration = getPacketDurationMilliseconds();
+  const lastStreamEnded = LAST_STREAM_STARTED + packetDuration;
+  const graphDuration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const graphEarliest = now - graphDuration;
+  // ended too long ago?
+  if(lastStreamEnded < graphEarliest) return;
 
-  // loop through each index
-  while(true) {
-    let segmentStart = streamStarted + (segmentIndex * SEGMENT_DURATION);
-    // if(segmentStart > streamEnded) break; // stream ended
+  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
 
-    let segmentEnd = segmentStart + SEGMENT_DURATION;
-    // find where the index is on the graph
-    const rightX = getTimeX(segmentStart, newest);
-    const leftX = getTimeX(segmentEnd, newest);
-    const segmentWidth = rightX - leftX;
-    if(leftX > width) continue; // too far in past
-    if(rightX < 0) break; // in the future
+  const latestSegmentEnded = Math.min(now, lastStreamEnded);
+
+  for(let time = latestSegmentEnded; time > graphEarliest; time -= SEGMENT_DURATION) {
+    // too far back?
+    if(time < LAST_STREAM_STARTED) break;
+
+    // which segment are we looking at?
+    const segmentIndex = Math.floor(((time - LAST_STREAM_STARTED) / SEGMENT_DURATION));
+
+    // when did the segment begin/end
+    const segmentStart = LAST_STREAM_STARTED + (segmentIndex * SEGMENT_DURATION);
+    const segmentEnd = segmentStart + SEGMENT_DURATION;
+
+    // where is the segments left x coordinate?
+    const leftX = ((now - segmentEnd) / graphDuration) * width;
 
     // Draw segment index
     ctx.fontSize = '24px';
-    let text = segmentIndex.toString();
-    let size = ctx.measureText(text);
-    let textX = leftX + (segmentWidth / 2) - (size.width / 2);
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 2;
-    ctx.textBaseline = 'bottom';
-    let textY = segmentIndex % 2 === 0 ? height : height - 12;
-    ctx.strokeText(text, textX, textY);
-    ctx.fillStyle = segmentStart > streamEnded ? 'grey' : 'white';
-    ctx.fillText(text, textX, textY);
+    if(segmentStart < lastStreamEnded) {
+      let text = segmentIndex.toString();
+      let size = ctx.measureText(text);
+      let textX = leftX + (segmentWidth / 2) - (size.width / 2);
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 2;
+      ctx.textBaseline = 'bottom';
+      let textY = segmentIndex % 2 === 0 ? height : height - 12;
+      ctx.strokeText(text, textX, textY);
+      ctx.fillStyle = 'white';
+      ctx.fillText(text, textX, textY);
+    }
 
     // draw sample count
     const sampleCount = frequencyOverTime
       .filter(fot => 
-        fot.streamStarted === streamStarted && 
+        fot.streamStarted === LAST_STREAM_STARTED && 
         fot.segmentIndex === segmentIndex
       )
       .length;
@@ -859,10 +859,6 @@ function drawSegmentIndexes(ctx) {
     else if(sampleCount < 3) ctx.fillStyle = 'yellow';
     else ctx.fillStyle = 'white';
     ctx.fillText(text, textX, textY);
-  
-    segmentIndex++;
-    // break out of potential infinite loop
-    if(segmentIndex >= maxSegments) break;
   }
 }
 function drawBitDurationLines(ctx, color) {
@@ -1035,7 +1031,7 @@ function drawChannelData() {
   const {height, width} = canvas;
 
   // Loop through visible segments
-  const latestSegmentEnded = Math.min(now, lastStreamEnded);
+  const latestSegmentEnded = Math.min(now, lastStreamEnded);//yyy
   for(let time = latestSegmentEnded; time > graphEarliest; time -= SEGMENT_DURATION) {
     // too far back?
     if(time < LAST_STREAM_STARTED) break;
@@ -1232,7 +1228,7 @@ function drawFrequencyData() {
     drawFrequencyLineGraph(ctx, channel, high, `hsl(${hue}, 100%, 50%)`, 2, false);
     drawFrequencyLineGraph(ctx, channel, low, `hsl(${hue}, 100%, 25%)`, 1, true);
   });
-  drawSegmentIndexes(ctx);
+  drawSegmentIndexes(ctx, width, height);
 
   requestAnimationFrame(drawFrequencyData);
 }
