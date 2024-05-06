@@ -1103,7 +1103,6 @@ function drawChannelData() {
   }
   drawChannelByteMarkers(ctx, channelCount, width, height);
   drawChannelNumbers(ctx, channelCount, width, height)
-  console.log('time', Math.ceil(performance.now() - now));
 }
 function clearCanvas(canvas) {
   const ctx = canvas.getContext('2d');
