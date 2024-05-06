@@ -479,12 +479,19 @@ function collectSample() {
       // proposed end
       data.streamEnded = priorStreamEnded;
     } else {
-      // new bit stream
-      data.streamStarted = time;
-      LAST_STREAM_STARTED = time;
-      // clear last packet
-      packetReceivedBits.length = 0;
-      packetDataByteCount = 0;
+      if(pauseTimeoutId) {
+        window.clearTimeout(pauseTimeoutId);
+        pauseTimeoutId = undefined;
+        // recover prior bit stream
+        data.streamStarted = LAST_STREAM_STARTED;
+      } else {
+          // new bit stream
+        data.streamStarted = time;
+        LAST_STREAM_STARTED = time;
+        // clear last packet
+        packetReceivedBits.length = 0;
+        packetDataByteCount = 0;
+      }
     }
 
     // number of bit in the stream
