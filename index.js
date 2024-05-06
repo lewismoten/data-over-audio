@@ -30,6 +30,7 @@ var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 let PERIODIC_INTERLEAVING = true;
 
+const ERROR_CORRECTION_BLOCK_SIZE = 7;
 let CHANNEL_OVER = -1;
 let CHANNEL_SELECTED = -1;
 let SEGMENT_OVER = -1;
@@ -203,7 +204,7 @@ function showSpeed() {
   document.getElementById('data-transfer-speed-bits-per-second').innerText = baud.toFixed(2);
   document.getElementById('data-transfer-speed-bytes-per-second').innerText = bytes.toFixed(2);
   if(HAMMING_ERROR_CORRECTION) {
-    const effectiveBaud = baud * 4 / 7;
+    const effectiveBaud = baud * 4 / ERROR_CORRECTION_BLOCK_SIZE;
     const effectiveBytes = effectiveBaud / 8;
     document.getElementById('effective-speed-bits-per-second').innerText = effectiveBaud.toFixed(2);
     document.getElementById('effective-speed-bytes-per-second').innerText = effectiveBytes.toFixed(2);
@@ -295,7 +296,7 @@ function nibbleToHamming(nibble) {
   ]
 }
 function hammingToNibble(hamming) {
-  if(hamming.length !== 7) return [];
+  if(hamming.length !== ERROR_CORRECTION_BLOCK_SIZE) return [];
   const error_1 = hamming[0] ^ hamming[2] ^ hamming[4] ^ hamming[6];
   const error_2 = hamming[1] ^ hamming[2] ^ hamming[5] ^ hamming[6];
   const error_3 = hamming[3] ^ hamming[4] ^ hamming[5] ^ hamming[6];
@@ -317,17 +318,24 @@ function getFrequency(bit) {
   return bit ? MAXIMUM_FREQUENCY : MINIMUM_FREQUENCY;
 }
 function removeInterleaving(bits) {
-  return applyInterleaving(bits);
+  return applyInterleaving(bits, true);
 }
-function applyInterleaving(bits) {
+function applyInterleaving(bits, undo = false) {
+  // Not turned on
   if(!PERIODIC_INTERLEAVING) return bits;
+
+  // Only applicable for error correction
+  if(!HAMMING_ERROR_CORRECTION) return bits;
+
   const channels = getChannels();
   const channelCount = channels.length;
-  // We need at least 4 channels to swap odd numbered bits
-  if(channelCount < 4) return bits;
-  // Determine what the center channel index is
-  const centerIndex = Math.floor(channelCount / 2);
-  if(centerIndex % 2 === 1) centerIndex++;
+
+  // We need at least 1 extra channel for one bit to escape the block
+  if(channelCount < ERROR_CORRECTION_BLOCK_SIZE + 1) return bits;
+
+  const blockCount = Math.ceil(channelCount / ERROR_CORRECTION_BLOCK_SIZE);
+  // need another block to swap bits with
+  if(blockCount < 2) return bits;
 
   // ensure last segment has enough bits to swap
   while(bits.length % channelCount !== 0) bits.push(0);
@@ -336,26 +344,34 @@ function applyInterleaving(bits) {
   for(let i = 0; i < bits.length; i+= channelCount) {
 
     // Grab the bits for the segment
-    const segment = bits.slice(i, i + channelCount);
+    let segment = bits.slice(i, i + channelCount);
+    segment = staggerValues(segment, ERROR_CORRECTION_BLOCK_SIZE, undo);
 
-    // Loop through the odd bits up to the center channel
-    for(let fromIndex = 1; fromIndex < centerIndex; fromIndex += 2) {
-      // Identify the target bit to swap
-      const targetIndex = (fromIndex + centerIndex);
-
-      // remember the bits
-      const bitA = segment[fromIndex];
-      const bitB = segment[targetIndex];
-
-      // swap the bits
-      segment[targetIndex] = bitA;
-      segment[fromIndex] = bitB;
-    }
     // update the bits with the modified segment
     bits.splice(i, channelCount, ...segment);
   }
   return bits;
 }
+
+function staggerValues(values, blockSize, undo) {
+  // loop through bit indexes of a block
+  for(let blockMovement = 1; blockMovement < blockSize; blockMovement++) {
+    values.filter((_, i) =>
+      // values to be moved to different blocks
+      i % blockSize === blockMovement
+    ).map((_,i,a) => {
+      // bit values moved N blocks
+      if(undo) i -= blockMovement; else i += blockMovement;
+      i = ((i % a.length) + a.length) % a.length;
+      return a[i];
+    }).forEach((v, i) => {
+      // replace with new values
+      values[blockMovement + (i * blockSize)] = v;
+    })
+  };
+  return values;
+}
+
 function applyErrorCorrection(bits) {
   if(!HAMMING_ERROR_CORRECTION) return bits;
   const encodedBits = [];
@@ -637,11 +653,11 @@ if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
   packetReceivedBits.push(...bitValues);
   packetUninterlievedBits.push(...removeInterleaving(bitValues));
 
-  const encodingRatio = HAMMING_ERROR_CORRECTION ? 7/4 : 1;
+  const encodingRatio = HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_BLOCK_SIZE/4 : 1;
   if(HAMMING_ERROR_CORRECTION) {
     packetDecodedBits.length = 0;
-    for(let i = 0; i < packetUninterlievedBits.length; i += 7) {
-      const hamming = packetUninterlievedBits.slice(i, i + 7);
+    for(let i = 0; i < packetUninterlievedBits.length; i += ERROR_CORRECTION_BLOCK_SIZE) {
+      const hamming = packetUninterlievedBits.slice(i, i + ERROR_CORRECTION_BLOCK_SIZE);
       const nibble = hammingToNibble(hamming);
       packetDecodedBits.push(...nibble);
     }
