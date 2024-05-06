@@ -10,21 +10,22 @@ var receivedDataTextarea;
 var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
-var MAX_DATA = 300;
+var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
 var pauseTimeoutId;
 var sampleIntervalIds = [];
 
 var TEXT_TO_SEND = "U";
 var RANDOM_COUNT = 128;
-var MAX_BITS_DISPLAYED_ON_GRAPH = 78;
+var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
 var AMPLITUDE_THRESHOLD = 160;
-var MINIMUM_FREQUENCY = 304;
-var MAXIMUM_FREQUENCY = 4800;
+var MINIMUM_FREQUENCY = 323;
+var MAXIMUM_FREQUENCY = 9226;
 var LAST_SEGMENT_PERCENT = 0.6;
 var FFT_SIZE_POWER = 10;
 var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
+let CHANNEL_FREQUENCY_RESOLUTION_PADDING = 2;
 var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 
@@ -89,6 +90,11 @@ function handleWindowLoad() {
   document.getElementById('frequency-resolution-multiplier').value = FREQUENCY_RESOLUTION_MULTIPLIER;
   document.getElementById('frequency-resolution-multiplier').addEventListener('input', event => {
     FREQUENCY_RESOLUTION_MULTIPLIER = parseInt(event.target.value);
+    showSpeed();
+  })
+  document.getElementById('channel-frequency-resolution-padding').value = CHANNEL_FREQUENCY_RESOLUTION_PADDING;
+  document.getElementById('channel-frequency-resolution-padding').addEventListener('input', event => {
+    CHANNEL_FREQUENCY_RESOLUTION_PADDING = parseInt(event.target.value);
     showSpeed();
   })
   document.getElementById('bit-duration-text').addEventListener('input', (event) => {
@@ -310,7 +316,7 @@ function getChannels() {
   const fftSize = 2 ** FFT_SIZE_POWER;
   const frequencyResolution = sampleRate / fftSize;
   const channels = [];
-  const pairStep = frequencyResolution * 2 * FREQUENCY_RESOLUTION_MULTIPLIER;
+  const pairStep = frequencyResolution * (2 + CHANNEL_FREQUENCY_RESOLUTION_PADDING) * FREQUENCY_RESOLUTION_MULTIPLIER;
   for(let hz = MINIMUM_FREQUENCY; hz < MAXIMUM_FREQUENCY; hz+= pairStep) {
     const low = Math.floor(hz);
     const high = Math.floor(hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER);
@@ -952,7 +958,7 @@ function drawFrequencyLineGraph(ctx, channel, highLowIndex, color, lineWidth, da
     if(x === -1) continue;
     if(channel > pairs.length) continue;
     const amplitude = pairs[channel][highLowIndex];
-    const y = getPercentY(amplitude / MAX_DATA);
+    const y = getPercentY(amplitude / MAX_AMPLITUDE);
     if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   if(isSelected || isOver) {
@@ -980,7 +986,7 @@ function drawFrequencyDots(ctx, channel, highLowIndex, color) {
     const x = getTimeX(time, newest);
     if(x === -1) continue;
     const amplitude = pairs[channel][highLowIndex];
-    const y = getPercentY(amplitude / MAX_DATA);
+    const y = getPercentY(amplitude / MAX_AMPLITUDE);
 
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, fullCircle);
@@ -1269,7 +1275,7 @@ function drawFrequencyData(forcedDraw) {
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, width, height);
   
-  const thresholdY = (1 - (AMPLITUDE_THRESHOLD/MAX_DATA)) * height;
+  const thresholdY = (1 - (AMPLITUDE_THRESHOLD/MAX_AMPLITUDE)) * height;
   ctx.strokeStyle = 'grey';
   ctx.beginPath();
   ctx.moveTo(0, thresholdY);
