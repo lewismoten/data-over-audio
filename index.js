@@ -950,6 +950,7 @@ function drawFrequencyLineGraph(ctx, channel, highLowIndex, color, lineWidth, da
     const {pairs, time} = frequencyOverTime[i];
     const x = getTimeX(time, newest);
     if(x === -1) continue;
+    if(channel > pairs.length) continue;
     const amplitude = pairs[channel][highLowIndex];
     const y = getPercentY(amplitude / MAX_DATA);
     if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
