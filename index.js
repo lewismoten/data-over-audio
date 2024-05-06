@@ -1357,7 +1357,105 @@ function handleReceivedChannelGraphClick(e) {
   const {channelIndex, segmentIndex} = getChannelAndSegment(e);
   CHANNEL_SELECTED = channelIndex;
   SEGMENT_SELECTED = segmentIndex;
+  const channels = getChannels();
+  const channelCount = channels.length;
+
+  const selectedSamples = document.getElementById('selected-samples');
+  selectedSamples.innerHTML = "";
+
+  function addLowHigh(info, low, high) {
+    const div = document.createElement('div');
+    div.className = 'low-high-set'
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'ingo';
+    const lowDiv = document.createElement('div');
+    lowDiv.className = 'low';
+    const highDiv = document.createElement('div');
+    highDiv.className = 'high';
+    infoDiv.innerText = info;
+    lowDiv.innerText = low;
+    highDiv.innerText = high;
+    if(low === 255) lowDiv.classList.add('max');
+    if(high === 255) highDiv.classList.add('max');
+    if(typeof low === 'number' && typeof high === 'number') {
+      if(low > high) lowDiv.classList.add('highest');
+      else highDiv.classList.add('highest');
+    }
+    div.appendChild(infoDiv);
+    div.appendChild(lowDiv);
+    div.appendChild(highDiv);
+    selectedSamples.appendChild(div);
+  }
+
+  if(CHANNEL_SELECTED !== -1) {
+    addLowHigh('', 'Low', 'High');
+    addLowHigh('Hz',
+      channels[CHANNEL_SELECTED][0].toLocaleString(),
+      channels[CHANNEL_SELECTED][1].toLocaleString()
+    )
+  }
+  if(SEGMENT_SELECTED === -1) {
+    document.getElementById('selected-segment').innerText = 'N/A';
+  } else {
+    document.getElementById('selected-segment').innerText = SEGMENT_SELECTED;
+    if(CHANNEL_SELECTED !== -1) {
+
+      const bitIndex = CHANNEL_SELECTED + (SEGMENT_SELECTED * channelCount);
+      document.getElementById('selected-bit').innerText = bitIndex.toLocaleString();
+
+      const samples = frequencyOverTime
+        .filter(fot => fot.segmentIndex === SEGMENT_SELECTED)
+        .map(fot => fot.pairs[CHANNEL_SELECTED]);
+      samples.forEach(([low, high], i) => {
+        if(i === 0) {
+          addLowHigh(`Amplitude ${i}`, low, high);
+        } else {
+          [priorLow, priorHigh] = samples[i - 1];
+          addLowHigh(`Amplitude ${i}`, 
+            priorLow === low ? '"' : low,
+            priorHigh === high ? '"' : high
+          );
+          
+        }
+      });
+
+      const expectedBit = EXPECTED_ENCODED_BITS[bitIndex];
+      const receivedBit = packetReceivedBits[bitIndex];
+      addLowHigh('Expected Bit', expectedBit === 1 ? '' : '0', expectedBit === 1 ? '1' : '')
+      addLowHigh('Received Bit', receivedBit === 1 ? '' : '0', receivedBit === 1 ? '1' : '')
+
+      const sums = samples.reduce((sum, [low, high]) => {
+        sum[0]+= low;
+        sum[1]+= high;
+        return sum;
+      }, [0, 0]);
+      addLowHigh('Total', sums[0], sums[1]);
+
+      const sorts = samples.reduce((sum, [low, high]) => {
+        sum.low.push(low);
+        sum.high.push(high)
+        return sum;
+      }, {low: [], high: []});
+      sorts.low.sort(compareNumbers);
+      sorts.high.sort(compareNumbers);
+      const middleIndex = Math.floor(samples.length / 2);
+
+      addLowHigh('Median', sorts.low[middleIndex], sorts.high[middleIndex]);
+      
+    }
+  }
+
+  if(CHANNEL_SELECTED === -1) {
+    document.getElementById('selected-channel').innerText = 'N/A';
+  } else {
+    document.getElementById('selected-channel').innerText = CHANNEL_SELECTED;
+  }
+
+
   requestAnimationFrame(drawFrequencyData.bind(null, true));
+}
+function compareNumbers(a, b) {
+  return a - b;
 }
 function getChannelAndSegment(e) {
   const {width, height} = e.target.getBoundingClientRect();

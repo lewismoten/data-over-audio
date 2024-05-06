@@ -48,3 +48,31 @@ ol {
   font-family: monospace;
   width: 250px;
 }
+
+#selected-samples {
+  width: 200px;
+}
+.low-high-set {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.low-high-set .max {
+  color: yellow;
+  font-style: bold;
+}
+.low-high-set .highest {
+  color: rgb(207, 207, 21);
+}
+.low-high-set .low {
+  min-width: 45px;
+  text-align: center;
+}
+.low-high-set .info {
+  min-width: 45px;
+  text-align: right;
+}
+.low-high-set .high {
+  min-width: 45px;
+  text-align: center;
+}
