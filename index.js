@@ -185,9 +185,9 @@ function handleTextToSendInput() {
   const text = textToSend.value;
   const dataByteCount = text.length;
   const dataBitCount = dataByteCount * 8;
-  const nibblesToEncode = HAMMING_ERROR_CORRECTION ? Math.ceil((dataBitCount + PACKET_SIZE_BITS) / 4) : 0;
+  const nibblesToEncode = HAMMING_ERROR_CORRECTION ? Math.ceil((dataBitCount) / 4) : 0;
   const errorCorrectionBits = nibblesToEncode * 3;
-  const totalBits = errorCorrectionBits + dataBitCount + PACKET_SIZE_BITS;
+  const totalBits = errorCorrectionBits + dataBitCount;
   const totalBytes = Math.ceil(totalBits / 8);
   const channelCount = getChannels().length;
   const segmentCount = Math.ceil(totalBits / channelCount);
@@ -202,7 +202,7 @@ function handleTextToSendInput() {
   document.getElementById('packet-send-channel-count').innerText = channelCount.toLocaleString();
   document.getElementById('packet-send-segment-count').innerText = segmentCount.toLocaleString();
   document.getElementById('packet-send-segment-duration').innerText = (SEGMENT_DURATION / 1000).toLocaleString();
-  document.getElementById('data-size-header-bits').innerText = PACKET_SIZE_BITS.toLocaleString();
+  document.getElementById('data-size-header-bits').innerText = '0';
 }
 
 function updateFrequencyResolution() {
@@ -461,14 +461,6 @@ function sendBits(bits) {
     return;
   }
 
-  const packetLength = ((byteCount - 1) >>> 0)
-    .toString(2)
-    .padStart(PACKET_SIZE_BITS, '0')
-    .split('')
-    .map(Number);
-    
-  bits.unshift(...packetLength);
-
   EXPECTED_BITS = bits.slice();
 
   document.getElementById('sent-data').value = bits.reduce(bitReducer, '');
@@ -565,6 +557,7 @@ function collectSample() {
     // we already have this sample
     if(time === frequencyOverTime[0].time) return;
   }
+  const channelCount = getChannels().length;
   const frequencies = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(frequencies);
   const length = audioContext.sampleRate / analyser.fftSize;
@@ -593,11 +586,15 @@ function collectSample() {
       // proposed end
       data.streamEnded = priorStreamEnded;
     } else {
+      const totalBits = 2 ** PACKET_SIZE_BITS;
+      const segments = Math.ceil(totalBits / channelCount);
+      const duration = segments * SEGMENT_DURATION;
       if(pauseTimeoutId) {
         window.clearTimeout(pauseTimeoutId);
         pauseTimeoutId = undefined;
         // recover prior bit stream
         data.streamStarted = LAST_STREAM_STARTED;
+        data.streamEnded = LAST_STREAM_STARTED + duration;
       } else {
           // new bit stream
         data.streamStarted = time;
@@ -606,6 +603,7 @@ function collectSample() {
         packetReceivedBits.length = 0;
         packetUninterlievedBits.length = 0;
         packetDataByteCount = 0;
+        data.streamEnded = time + duration;    
       }
     }
 
@@ -698,7 +696,6 @@ if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
   packetReceivedBits.push(...bitValues);
   packetUninterlievedBits.push(...removeInterleaving(bitValues));
 
-  const encodingRatio = HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_BLOCK_SIZE/4 : 1;
   if(HAMMING_ERROR_CORRECTION) {
     packetDecodedBits.length = 0;
     for(let i = 0; i < packetUninterlievedBits.length; i += ERROR_CORRECTION_BLOCK_SIZE) {
@@ -709,38 +706,6 @@ if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
   } else {
     packetDecodedBits.length = 0;
     packetDecodedBits.push(...packetUninterlievedBits);
-  }
-
-  // Determine if we can identify the length of data comming
-  const encodedBitsNeededForDataLength = Math.ceil(Math.ceil(PACKET_SIZE_BITS / 4) * encodingRatio);
-  if(packetDecodedBits.length >= encodedBitsNeededForDataLength) {
-    // we can evaluate when we should know many bytes are comming
-    const dataLengthIndex = Math.floor(encodedBitsNeededForDataLength / channelCount);
-    // if(dataLengthIndex === segmentIndex) {
-      // we just got the bits we needed
-      packetDataByteCount = 1 + packetDecodedBits
-        .slice(0, PACKET_SIZE_BITS)
-        .reduce((value, bit) => (value << 1) | bit);
-      document.getElementById('decoded-byte-count').innerText = packetDataByteCount;
-      // let's get the end time
-      const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
-      const segments = Math.ceil(totalBits / channelCount);
-      const duration = segments * SEGMENT_DURATION;
-      const streamEnded = streamStarted + duration;
-      // update everyones proposed end time
-      frequencyOverTime
-        .filter(fot => fot.streamStarted === streamStarted)
-        .forEach(fot => {
-          fot.streamEnded = streamEnded
-        });
-    // }
-    // remove phantom bits
-    // const totalBits = Math.ceil(((packetDataByteCount * 8) + PACKET_SIZE_BITS) * encodingRatio);
-    if(packetReceivedBits.length > totalBits) {
-      // const excess = packetReceivedBits.length % totalBits;
-      // packetReceivedBits.length = totalBits;
-      // bitValues.length = bitValues.length - excess;
-    }
   }
 
   document.getElementById('decoded-data').innerHTML = packetDecodedBits.reduce(bitExpectorReducer(EXPECTED_BITS), '');
@@ -779,14 +744,14 @@ const bitExpectorReducer = expected => (all, bit, i) => {
 }
 const textExpectorReducer = expected => (all, bit, i, bits) => {
   if(i < PACKET_SIZE_BITS) return all;
-  if((i - PACKET_SIZE_BITS) % 8 === 0) {
+  if(i % 8 === 0) {
     const bitString = bits.slice(
       i, 
       i + 8
     ).join('').padEnd(8, '0');
     const ascii = parseInt(bitString, 2);
     const char = String.fromCharCode(ascii);
-    const charIndex = Math.floor((i - PACKET_SIZE_BITS) / 8);
+    const charIndex = Math.floor(i / 8);
     if(char !== expected[charIndex]) {
       all += '<span class="bit-wrong">' + htmlEncode(printable(char)) + '</span>';
     } else {
@@ -1121,7 +1086,7 @@ function getDataBitCount() {
   return dataByteCount * 8;
 }
 function getPacketSizeUnencodedBitCount() {
-  return getDataBitCount() + PACKET_SIZE_BITS;
+  return getDataBitCount();
 }
 function getErrorCorrectionBlocks() {
   if(!HAMMING_ERROR_CORRECTION) return 0;
