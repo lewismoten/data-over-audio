@@ -394,8 +394,8 @@ function getChannels() {
   const channels = [];
   const pairStep = frequencyResolution * (2 + CHANNEL_FREQUENCY_RESOLUTION_PADDING) * FREQUENCY_RESOLUTION_MULTIPLIER;
   for(let hz = MINIMUM_FREQUENCY; hz < MAXIMUM_FREQUENCY; hz+= pairStep) {
-    const low = Math.floor(hz);
-    const high = Math.floor(hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER);
+    const low = hz;
+    const high = hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER;
     if(low < MINIMUM_FREQUENCY) continue;
     if(high > MAXIMUM_FREQUENCY) continue;
     channels.push([low, high]);
