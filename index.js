@@ -15,6 +15,7 @@ var pauseTimeoutId;
 var sampleIntervalIds = [];
 
 let EXCLUDED_CHANNELS = [];
+let HUFFMAN_COMRPRESSION = true
 
 var TEXT_TO_SEND = "U";
 var RANDOM_COUNT = 128;
@@ -54,6 +55,7 @@ var PACKET_SIZE_BITS = 8;
 var EXPECTED_ENCODED_BITS = [];
 var EXPECTED_BITS = [];
 var EXPECTED_TEXT = '';
+var EXPECTED_COMPRESSION = [];
 
 const packetReceivedBits = [];
 const packetUninterlievedBits = [];
@@ -63,7 +65,6 @@ let packetDataByteCount = -1;
 function handleWindowLoad() {
   const printable = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890`-=~!@#$%^&*()_+[]\\{}|;':\",./<>?";
   TEXT_TO_SEND = new Array(RANDOM_COUNT).fill(0).map(() => printable[Math.floor(Math.random() * printable.length)]).join('');
-
   // grab dom elements
   sendButton = document.getElementById('send-button');
   isListeningCheckbox = document.getElementById('is-listening-checkbox');
@@ -403,6 +404,10 @@ function applyErrorCorrection(bits) {
     encodedBits.push(...nibbleToHamming(bits.slice(i, i + 4)));
   }
   return encodedBits;
+}
+function applyCompression(bytes) {
+  if(!HUFFMAN_COMRPRESSION) return bytes;
+  return bytes;
 }
 function getChannels(includeExcluded = false) {
   var audioContext = getAudioContext();
@@ -813,15 +818,21 @@ function getAudioContext() {
   }
   return audioContext;
 }
-
+function byteToBitArray(byte) {
+  return byte.toString(2).padStart(8, '0').split('').map(Number);
+}
 function textToBits(text) {
   const bits = [];
-  for(let i = 0; i < text.length; i++) {
-    // const unicode = text.codePointAt(i).toString(2).padStart(16, '0');
-    const ascii = text[i].charCodeAt(0).toString(2).padStart(8, '0');
-    bits.push(ascii);
+  if(typeof text === 'string') {
+    for(let i = 0; i < text.length; i++) {
+      bits.push(...byteToBitArray(text[i].charCodeAt(0)));
+    }
+  } else if(Array.isArray(text)) {
+    return text.reduce((bits, byte) => {
+      bits.push(...byteToBitArray(byte))
+    })
   }
-  return bits.join('').split('').map(Number);
+  return bits;
 }
 function handleSendButtonClick() {
   receivedDataTextarea.value = '';
@@ -829,7 +840,8 @@ function handleSendButtonClick() {
 
   const text = document.getElementById('text-to-send').value;
   EXPECTED_TEXT = text;
-  sendBits(textToBits(text));
+  EXPECTED_COMPRESSION = applyCompression(text);
+  sendBits(textToBits(EXPECTED_COMPRESSION));
 }
 function getAnalyser() {
   if(analyser) return analyser;
