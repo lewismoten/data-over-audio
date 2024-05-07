@@ -1347,12 +1347,19 @@ function drawChannelNumbers(ctx, channelCount, width, height) {
   ctx.fillRect(offset, 0, (fontHeight * maxDigits), channelHeight * channelCount);
   for(let channelIndex = 0; channelIndex < channelCount; channelIndex++) {
     let top = channelHeight * channelIndex;
-    let text = channelIndex.toString();
+    let text = realChannel(channelIndex).toString();
     const textTop = top + (channelHeight / 2);
     const hue = channelHue(channelIndex, channelCount);
     ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
     ctx.fillText(text, offset + 5, textTop);
   }
+}
+function realChannel(id) {
+  EXCLUDED_CHANNELS.sort(compareNumbers);
+  for(let i = 0; i < EXCLUDED_CHANNELS.length; i++) {
+    if(EXCLUDED_CHANNELS[i] <= id) id++;
+  }
+  return id;
 }
 function drawFrequencyData(forcedDraw) {
   if(PAUSE && forcedDraw !== true) return;
@@ -1547,7 +1554,7 @@ function handleReceivedChannelGraphClick(e) {
   if(CHANNEL_SELECTED === -1) {
     document.getElementById('selected-channel').innerText = 'N/A';
   } else {
-    document.getElementById('selected-channel').innerText = CHANNEL_SELECTED;
+    document.getElementById('selected-channel').innerText = realChannel(CHANNEL_SELECTED);
   }
 
 
