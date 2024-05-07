@@ -14,6 +14,8 @@ var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
 var pauseTimeoutId;
 var sampleIntervalIds = [];
 
+let EXCLUDED_CHANNELS = [];
+
 var TEXT_TO_SEND = "U";
 var RANDOM_COUNT = 128;
 var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
@@ -200,6 +202,7 @@ function updateFrequencyResolution() {
 function showSpeed() {
   const segmentsPerSecond = 1000 / SEGMENT_DURATION;
   const channels = getChannels();
+  const allChannels = getChannels(true);
   const bitsPerSegment = channels.length;
   const baud = bitsPerSegment * segmentsPerSecond;
   const bytes = baud / 8;
@@ -221,9 +224,24 @@ function showSpeed() {
 
   const channelList = document.getElementById('channel-list');
   channelList.innerHTML = "";
-  channels.forEach(([low, high]) => {
+  allChannels.forEach(([low, high], i) => {
     const li = document.createElement('li');
-    li.textContent = `Low: ${low} Hz High: ${high} Hz`;
+    const label = document.createElement('label');
+    li.appendChild(label);
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !EXCLUDED_CHANNELS.includes(i);
+    checkbox.addEventListener('input', event => {
+      if(event.target.checked) {
+        EXCLUDED_CHANNELS = EXCLUDED_CHANNELS.filter(channel => channel !== i)
+      } else {
+        EXCLUDED_CHANNELS.push(i);
+      }
+      showSpeed();
+    })
+    label.append(checkbox);
+    const text = document.createTextNode(`Low: ${low} Hz High: ${high} Hz`);
+    label.append(text);
     channelList.appendChild(li);
   })
   handleTextToSendInput();
@@ -386,18 +404,24 @@ function applyErrorCorrection(bits) {
   }
   return encodedBits;
 }
-function getChannels() {
+function getChannels(includeExcluded = false) {
   var audioContext = getAudioContext();
   const sampleRate = audioContext.sampleRate;
   const fftSize = 2 ** FFT_SIZE_POWER;
   const frequencyResolution = sampleRate / fftSize;
   const channels = [];
   const pairStep = frequencyResolution * (2 + CHANNEL_FREQUENCY_RESOLUTION_PADDING) * FREQUENCY_RESOLUTION_MULTIPLIER;
+  let channelId = -1;
   for(let hz = MINIMUM_FREQUENCY; hz < MAXIMUM_FREQUENCY; hz+= pairStep) {
     const low = hz;
     const high = hz + frequencyResolution * FREQUENCY_RESOLUTION_MULTIPLIER;
     if(low < MINIMUM_FREQUENCY) continue;
     if(high > MAXIMUM_FREQUENCY) continue;
+    channelId++;
+
+    if(!includeExcluded) {
+      if(EXCLUDED_CHANNELS.includes(channelId)) continue;
+    }
     channels.push([low, high]);
   }
   return channels;
