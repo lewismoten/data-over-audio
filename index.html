@@ -65,6 +65,10 @@
         <option value="sawtooth">Sawtooth Wave</option>
         <option value="triangle">Triangle Wave</option>
       </select><br>
+      Packet Size: 
+        2^<input id="packet-size-power" type="number" min="0" max="16">
+        <span id="packet-size"></span>
+        <br>
       Segment Duration: <input id="bit-duration-text" type="number" min="0" max="1000" value="190">ms<br>
       Amplitude Threshold: <input id="amplitude-threshold-text" type="number" min="0" max="100" value="75"><br>
       Minimum Frequency: <input id="minimum-frequency" type="number" min="20" max="20000" value="900"><br>

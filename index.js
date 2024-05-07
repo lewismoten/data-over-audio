@@ -81,7 +81,13 @@ function handleWindowLoad() {
   document.getElementById('wave-form').value = WAVE_FORM;
   document.getElementById('wave-form').addEventListener('change', (event) => {
     WAVE_FORM = event.target.value;
-  })
+  });
+  document.getElementById('packet-size-power').value = PACKET_SIZE_BITS;
+  document.getElementById('packet-size').innerText = friendlyByteSize(2 ** PACKET_SIZE_BITS);
+  document.getElementById('packet-size-power').addEventListener('input', event => {
+    PACKET_SIZE_BITS = parseInt(event.target.value);
+    document.getElementById('packet-size').innerText = friendlyByteSize(2 ** PACKET_SIZE_BITS);
+  });
   document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
   document.getElementById('error-correction-hamming').checked = HAMMING_ERROR_CORRECTION;
   document.getElementById('error-correction-hamming').addEventListener('change', event => {
@@ -162,6 +168,17 @@ function handleWindowLoad() {
   textToSend.addEventListener('input', handleTextToSendInput);
   handleTextToSendInput();
   showSpeed();
+}
+function friendlyByteSize(count) {
+  let unitIndex = 0;
+  const units = ['bytes', 'kb', 'mb', 'gb', 'tb', 'pb'];
+  while(count > 900) {
+    count /= 1024;
+    unitIndex++;
+    if(unitIndex === units.length - 1) break;
+  }
+  count = Math.floor(count * 10) * 0.1
+  return `${count.toLocaleString()} ${units[unitIndex]}`
 }
 
 function handleTextToSendInput() {
