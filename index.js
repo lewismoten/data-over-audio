@@ -20,8 +20,8 @@ var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
 var AMPLITUDE_THRESHOLD = 160;
-var MINIMUM_FREQUENCY = 80;
-var MAXIMUM_FREQUENCY = 18017;
+var MINIMUM_FREQUENCY = 400;
+var MAXIMUM_FREQUENCY = 14650;
 var LAST_SEGMENT_PERCENT = 0.6;
 var FFT_SIZE_POWER = 9;
 var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
@@ -29,6 +29,7 @@ let CHANNEL_FREQUENCY_RESOLUTION_PADDING = 2;
 var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 let PERIODIC_INTERLEAVING = true;
+let WAVE_FORM = "triangle";
 
 const ERROR_CORRECTION_BLOCK_SIZE = 7;
 let CHANNEL_OVER = -1;
@@ -75,7 +76,10 @@ function handleWindowLoad() {
   receivedChannelGraph.addEventListener('mouseout', handleReceivedChannelGraphMouseout);
   receivedChannelGraph.addEventListener('mousemove', handleReceivedChannelGraphMousemove);
   receivedChannelGraph.addEventListener('click', handleReceivedChannelGraphClick);
-  
+  document.getElementById('wave-form').value = WAVE_FORM;
+  document.getElementById('wave-form').addEventListener('change', (event) => {
+    WAVE_FORM = event.target.value;
+  })
   document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
   document.getElementById('error-correction-hamming').checked = HAMMING_ERROR_CORRECTION;
   document.getElementById('error-correction-hamming').addEventListener('change', event => {
@@ -447,7 +451,7 @@ function sendBits(bits) {
     var oscillator = audioContext.createOscillator();
     
     oscillator.connect(destination);
-    oscillator.type = 'sawtooth';
+    oscillator.type = WAVE_FORM;
     oscillators.push(oscillator);
   }
 
@@ -706,10 +710,10 @@ if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
   const correctEncodedBits = packetReceivedBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
   const correctedDecodedBits = packetDecodedBits.filter((b, i) => i < decodedBitCount && b === EXPECTED_BITS[i]).length;
   document.getElementById('received-data-error-percent').innerText = (
-    Math.floor((1 - (correctEncodedBits / encodedBitCount)) * 1000) * 0.1
+    Math.floor((1 - (correctEncodedBits / packetReceivedBits.length)) * 1000) * 0.1
   ).toLocaleString();
   document.getElementById('decoded-data-error-percent').innerText = (
-    Math.floor((1 - (correctedDecodedBits / decodedBitCount)) * 1000) * 0.1
+    Math.floor((1 - (correctedDecodedBits / packetDecodedBits.length)) * 1000) * 0.1
   ).toLocaleString();
   document.getElementById('decoded-text').innerHTML = packetDecodedBits.reduce(textExpectorReducer(EXPECTED_TEXT), '');
 }
