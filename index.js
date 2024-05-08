@@ -11,6 +11,7 @@ var sentDataTextArea;
 var receivedGraph;
 var receivedData = [];
 var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
+const MAXIMUM_PACKETIZATION_SIZE_BITS = 16;
 
 // bits after error correction is applied
 let RECEIVED_STREAM_DECODED_BITS = [];
@@ -301,7 +302,7 @@ function showSpeed() {
 function updatePacketStats() {
   const text = textToSend.value;
   const bits = textToBits(text);
-  const bitCount = bits.length;
+  const bitCount = getPacketizationBitCount(bits.length);
   const byteCount = bitCount / 8;
   document.getElementById('data-byte-count').innerText = byteCount.toLocaleString();
   document.getElementById('data-bit-count').innerText = bitCount.toLocaleString();
@@ -505,14 +506,22 @@ function sendBytes(bytes) {
   if(byteCount === 0) {
     logSent('Nothing to send!');
     return;
+  } else if(byteCount > 0xFFFF) {
+    logSent('Too much to send!');
+    return;
   }
 
   const bits = bytesToBits(bytes);
-  const bitCount = bits.length;
 
   SENT_ORIGINAL_TEXT = bytesToText(bytes);
   SENT_ORIGINAL_BYTES = bytes;
   SENT_ORIGINAL_BITS = bits.slice();  
+
+  // packetization headers
+  // data length
+  bits.unshift(...intToBits(bytes.length, MAXIMUM_PACKETIZATION_SIZE_BITS));
+  const bitCount = bits.length;
+
   SENT_TRANSFER_BITS.length = 0;
   SENT_ENCODED_BITS.length = 0;
 
@@ -617,6 +626,9 @@ function getSegmentTransferDurationSeconds() {
 }
 function getPacketByteCount() {
   return 2 ** PACKET_SIZE_BITS;
+}
+function getPacketizationBitCount(bitCount) {
+  return bitCount + MAXIMUM_PACKETIZATION_SIZE_BITS;
 }
 function getPacketBitCount() {
   return getPacketByteCount() * 8;
@@ -943,6 +955,7 @@ function resetStream() {
   RECEIVED_STREAM_RAW_BITS.length = 0;
   RECEIVED_STREAM_ENCODED_BITS.length = 0;
   RECEIVED_STREAM_DECODED_BITS.length = 0;
+  RECEIVED_STREAM_DATA_LENGTH = -1;
 }
 function resetPacket() {
   RECEIVED_PACKET_RAW_BITS.length = 0;
@@ -1030,6 +1043,16 @@ function updateReceivedData() {
     ...RECEIVED_STREAM_DECODED_BITS,
     ...RECEIVED_PACKET_DECODED_BITS
   ]
+
+  let dataLength = allDecodedBits.length / 8;
+  if(allDecodedBits.length >= MAXIMUM_PACKETIZATION_SIZE_BITS) {
+    dataLength = bitsToInt(allDecodedBits.slice(0, MAXIMUM_PACKETIZATION_SIZE_BITS), MAXIMUM_PACKETIZATION_SIZE_BITS);
+  }
+  // remove size header
+  allDecodedBits.splice(0, MAXIMUM_PACKETIZATION_SIZE_BITS);
+  // remove excessive bits
+  allDecodedBits.splice(dataLength * 8);
+
   const encodedBitCount = SENT_ENCODED_BITS.length;
   const decodedBitCount = SENT_ORIGINAL_BITS.length;
   const rawBitCount = SENT_TRANSFER_BITS.length;
@@ -1176,7 +1199,31 @@ function getAudioContext() {
   }
   return audioContext;
 }
-
+function bitsToInt(bits, bitLength) {
+  // only grab the bits we need
+  const bitString = bits.slice(0, bitLength)
+    // combine into string
+    .join('')
+    // Assume missing bits were zeros
+    .padEnd(bitLength, '0');
+  // parse as int
+  return parseInt(bitString, 2);
+}
+function intToBits(int, bitLength) {
+  // max number for bit length
+  const max = Math.pow(2, bitLength) - 1;
+  // overflow numbers too high
+  const value = (int & max);
+  return value
+    // convert to bit string
+    .toString(2)
+    // prefix with zeros to fill bit length
+    .padStart(bitLength, '0')
+    // convert to array
+    .split('')
+    // convert strings to numbers
+    .map(Number);
+}
 function bytesToText(bytes, encoding='utf-8') {
   return new TextDecoder(encoding).decode(bytes);
 }
