@@ -12,10 +12,20 @@ var receivedGraph;
 var receivedData = [];
 var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
 
+// bits after error correction is applied
 let RECEIVED_STREAM_DECODED_BITS = [];
 let RECEIVED_PACKET_DECODED_BITS = [];
-let RECEIVED_PACKET_BITS = [];
-let RECEIVED_STREAM_BITS = [];
+// bits as they arrived
+let RECEIVED_PACKET_RAW_BITS = [];
+let RECEIVED_STREAM_RAW_BITS = [];
+// all bits after interliving is removed and trimed to packet data size
+let RECEIVED_STREAM_ENCODED_BITS = [];
+let RECEIVED_PACKET_ENCODED_BITS = [];
+
+// bits as they are sent
+let SENT_TRANSFER_BITS = []; // bits sent in the transfer
+let SENT_ORIGINAL_BITS = []; // original bits
+let SENT_ENCODED_BITS = []; // bits with error encoding
 
 const CHANNEL_OSCILLATORS = [];
 
@@ -35,17 +45,17 @@ var sampleIntervalIds = [];
 let EXCLUDED_CHANNELS = [];
 
 var TEXT_TO_SEND = "U";
-var RANDOM_COUNT = 128;
+var RANDOM_COUNT = 19;
 var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
 var AMPLITUDE_THRESHOLD = 160;
-var MINIMUM_FREQUENCY = 400;
-var MAXIMUM_FREQUENCY = 14650;
+var MINIMUM_FREQUENCY = 9000;
+var MAXIMUM_FREQUENCY = 15000;
 var LAST_SEGMENT_PERCENT = 0.6;
 var FFT_SIZE_POWER = 9;
-var FREQUENCY_RESOLUTION_MULTIPLIER = 2;
-let CHANNEL_FREQUENCY_RESOLUTION_PADDING = 2;
+var FREQUENCY_RESOLUTION_MULTIPLIER = 3;
+let CHANNEL_FREQUENCY_RESOLUTION_PADDING = 1;
 var SMOOTHING_TIME_CONSTANT = 0;
 var HAMMING_ERROR_CORRECTION = true;
 let PERIODIC_INTERLEAVING = true;
@@ -413,6 +423,9 @@ function applyInterleaving(bits, undo = false) {
   // need another block to swap bits with
   if(blockCount < 2) return bits;
 
+  // make a copy
+  bits = bits.slice();
+
   // ensure last segment has enough bits to swap
   while(bits.length % channelCount !== 0) bits.push(0);
 
@@ -491,8 +504,6 @@ function sendBits(bits) {
     logSent('No bits to send!');
     return;
   }
-  EXPECTED_BITS = bits.slice();
-  EXPECTED_ENCODED_BITS = [];
 
   // add 100ms delay before sending
   const startSeconds = audioContext.currentTime + 0.1;
@@ -508,20 +519,33 @@ function sendBits(bits) {
   const errorCorrectionBits = [];
   const interleavingBits = [];
 
+  SENT_ORIGINAL_BITS = bits.slice();
+  SENT_TRANSFER_BITS.length = 0;
+  SENT_ENCODED_BITS.length = 0;
+
   createOscillators(startSeconds);
   // send all packets
   for(let i = 0; i < packetCount; i++) {
     let packet = getPacketBits(bits, i);
     errorCorrectionBits.push(...packet);
+    SENT_ENCODED_BITS.push(...packet);
     if(packet.length > packetBitCount) {
       console.error('Too many bits in the packet.');
       disconnectOscillators();
       return;
     }
+// XXX
+// Left off where packets being sent have an extra bit at the end
+// due to padding - but not error corrected, so wondering where the
+// bit came from in Segment 36. Seems to be affecting the next two
+// segments in packet 1, as if bits have been shiften to the right
+// by three? I think extra bits are showing up.
+    console.log('packet encoded bits', packet.length);//252|14
     packet = padArray(packet, packetBitCount, 0);
+    console.log('padded packet', packet.length);//256|256
     packet = applyInterleaving(packet);
+    console.log('interleaved packet', packet.length);//256|256(didn't change - only 7 channels. need 8 or more)
     interleavingBits.push(...packet);
-    EXPECTED_ENCODED_BITS.push(...packet);
     sendPacket(packet, startSeconds + (i * packetDurationSeconds));
   }
   stopOscillators(startSeconds + totalDurationSeconds);
@@ -533,7 +557,7 @@ function sendBits(bits) {
 
   // original bits
   document.getElementById('sent-data').innerHTML =
-    EXPECTED_BITS.reduce(bitReducer(
+    SENT_ORIGINAL_BITS.reduce(bitReducer(
       getPacketDataBitCount(),
       HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_DATA_SIZE : 8
     ), '');
@@ -541,7 +565,7 @@ function sendBits(bits) {
   // error correcting bits
   if(HAMMING_ERROR_CORRECTION) {
     document.getElementById('error-correcting-data').innerHTML =
-    errorCorrectionBits.reduce(bitReducer(
+    SENT_ENCODED_BITS.reduce(bitReducer(
       getPacketErrorBitCount(),
       ERROR_CORRECTION_BLOCK_SIZE
     ), '');
@@ -550,7 +574,7 @@ function sendBits(bits) {
   }
 
   document.getElementById('actual-bits-to-send').innerHTML = 
-  interleavingBits.reduce(bitReducer(
+  SENT_TRANSFER_BITS.reduce(bitReducer(
     getPacketBitCount() + getPacketLastSegmentUnusedChannelCount(),
     channelCount,
     (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
@@ -566,6 +590,7 @@ function sendPacket(bits, packetStartSeconds) {
   const segmentDurationSeconds = getSegmentTransferDurationSeconds();
   for(let i = 0; i < bitCount; i += channelCount) {
     const segmentBits = bits.slice(i, i + channelCount);
+    SENT_TRANSFER_BITS.push(...segmentBits);
     const segmentIndex = Math.floor(i / channelCount);
     var offsetSeconds = segmentIndex * segmentDurationSeconds;
     changeOscillators(segmentBits, packetStartSeconds + offsetSeconds);
@@ -643,6 +668,9 @@ function getPacketErrorBlockCount() {
     ERROR_CORRECTION_BLOCK_SIZE
   );
 }
+function getPacketUsedBitCount() {
+  return HAMMING_ERROR_CORRECTION ? getPacketErrorBitCount() : getPacketBitCount();
+}
 function getPacketErrorBitCount() {
   return getPacketErrorBlockCount() * ERROR_CORRECTION_BLOCK_SIZE;
 }
@@ -690,6 +718,7 @@ function getPacketDataBitCount() {
   return getPacketErrorBlockCount() * ERROR_CORRECTION_DATA_SIZE;
 }
 function padArray(values, length, value) {
+  values = values.slice();//copy
   while(values.length < length) values.push(value);
   return values;
 }
@@ -902,24 +931,32 @@ function GET_SEGMENT_BITS(streamStarted, segmentIndex, originalOrder = false) {
   const bitValues = sums.map((amps) => amps[0] > amps[1] ? 0 : 1);
   return originalOrder ? bitValues : removeInterleaving(bitValues);
 }
-
-function processPacketReceived(packetIndex, startMs, endMs) {
-  if(packetIndex === 0) {
-    // Reset received data from last stream
-    RECEIVED_STREAM_BITS.length = 0;
-    RECEIVED_STREAM_DECODED_BITS.length = 0;
-  }
-  // append to the stream
-  RECEIVED_STREAM_BITS.push(...RECEIVED_PACKET_BITS);
-  RECEIVED_STREAM_DECODED_BITS.push(...RECEIVED_PACKET_DECODED_BITS);
-
-  // reset the packet
-  RECEIVED_PACKET_BITS.length = 0;
+function resetReceivedData() {
+  resetStream();
+  resetPacket();
+}
+function resetStream() {
+  RECEIVED_STREAM_RAW_BITS.length = 0;
+  RECEIVED_STREAM_ENCODED_BITS.length = 0;
+  RECEIVED_STREAM_DECODED_BITS.length = 0;
+}
+function resetPacket() {
+  RECEIVED_PACKET_RAW_BITS.length = 0;
   RECEIVED_PACKET_DECODED_BITS.length = 0;
+  RECEIVED_PACKET_ENCODED_BITS.length = 0;
   packetReceivedBits.length = 0;
   packetUninterlievedBits.length = 0;
   packetDecodedBits.length = 0;
-  // display what was received
+}
+function processPacketReceived(packetIndex, startMs, endMs) {
+  if(packetIndex === 0) resetStream();
+
+  // append to the stream
+  RECEIVED_STREAM_RAW_BITS.push(...RECEIVED_PACKET_RAW_BITS);
+  RECEIVED_STREAM_ENCODED_BITS.push(...RECEIVED_PACKET_ENCODED_BITS);
+  RECEIVED_STREAM_DECODED_BITS.push(...RECEIVED_PACKET_DECODED_BITS);
+
+  resetPacket();
   updateReceivedData();
 }
 function processSegmentReceived(packetStarted, segmentIndex) {
@@ -947,9 +984,11 @@ function processSegmentReceived(packetStarted, segmentIndex) {
 
   packetReceivedBits.push(...bitValues);
   
+  // NOTE: Can't remove interleaving unless we have error correction and > 7 channels
   packetUninterlievedBits.push(...removeInterleaving(bitValues));
 
   if(HAMMING_ERROR_CORRECTION) {
+    
     const errorBitCount = getPacketErrorBitCount();
     const errorBits = packetUninterlievedBits.slice(0, errorBitCount);
     packetDecodedBits.length = 0;
@@ -965,50 +1004,76 @@ function processSegmentReceived(packetStarted, segmentIndex) {
     packetDecodedBits.push(...packetUninterlievedBits);
   }
 
-  const maxPacketBits = getPacketBitCount();
+  const maxUsedBits = getPacketUsedBitCount();
   const maxDataBits = getPacketDataBitCount();
-
+console.log(bitValues);
+  RECEIVED_PACKET_RAW_BITS.push(...bitValues);
   RECEIVED_PACKET_DECODED_BITS = packetDecodedBits.slice(0, maxDataBits);
-  RECEIVED_PACKET_BITS = packetReceivedBits.slice(0, maxPacketBits);
+  RECEIVED_PACKET_ENCODED_BITS = packetUninterlievedBits.slice(0, maxUsedBits);
 
   updateReceivedData();
 }
 
 function updateReceivedData() {
-  const allReceivedBits = [
-    ...RECEIVED_STREAM_DECODED_BITS,
-    ...RECEIVED_PACKET_DECODED_BITS
+  const channelCount = getChannels().length;
+  const allRawBits = [
+    ...RECEIVED_STREAM_RAW_BITS,
+    ...RECEIVED_PACKET_RAW_BITS
+  ];
+
+  const allEncodedBits = [
+    ...RECEIVED_STREAM_ENCODED_BITS,
+    ...RECEIVED_PACKET_ENCODED_BITS
   ];
   const allDecodedBits = [
-    ...RECEIVED_STREAM_BITS,
-    ...RECEIVED_PACKET_BITS
+    ...RECEIVED_STREAM_DECODED_BITS,
+    ...RECEIVED_PACKET_DECODED_BITS
   ]
-  const encodedBitCount = EXPECTED_ENCODED_BITS.length;
-  const decodedBitCount = EXPECTED_BITS.length;
-  const correctEncodedBits = allReceivedBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
-  const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === EXPECTED_BITS[i]).length;
+  const encodedBitCount = SENT_ENCODED_BITS.length;
+  const decodedBitCount = SENT_ORIGINAL_BITS.length;
+  const rawBitCount = SENT_TRANSFER_BITS.length;
 
-  document.getElementById('received-data').innerHTML = allReceivedBits
+  const correctRawBits = allRawBits.filter((b, i) => i < rawBitCount && b === SENT_TRANSFER_BITS[i]).length;
+  const correctEncodedBits = allEncodedBits.filter((b, i) => i < encodedBitCount && b === SENT_ENCODED_BITS[i]).length;
+  const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === SENT_ORIGINAL_BITS[i]).length;
+
+  document.getElementById('received-raw-bits').innerHTML = allRawBits
     .reduce(
       bitExpectorReducer(
-        EXPECTED_BITS,
-        getPacketBitCount(),
-        HAMMING_ERROR_CORRECTION ? 7 : 8
+        SENT_TRANSFER_BITS,
+        getPacketBitCount() + getPacketLastSegmentUnusedChannelCount(),
+        channelCount,
+        (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
       ),
     '');
-  document.getElementById('decoded-data').innerHTML = allDecodedBits
+    if(HAMMING_ERROR_CORRECTION) {
+      document.getElementById('received-encoded-bits').innerHTML = allEncodedBits
+      .reduce(
+        bitExpectorReducer(
+          SENT_ENCODED_BITS,
+          getPacketUsedBitCount(),
+          ERROR_CORRECTION_BLOCK_SIZE
+        ),
+      '');
+    } else {
+      document.getElementById('received-encoded-bits').innerHTML = 'Not encoded.';
+    }
+  document.getElementById('received-decoded-bits').innerHTML = allDecodedBits
     .reduce(
       bitExpectorReducer(
         EXPECTED_ENCODED_BITS,
         getPacketDataBitCount(),
-        8
+        HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_DATA_SIZE : 8
       ),
     '');
 
-  document.getElementById('received-data-error-percent').innerText = (
-    Math.floor((1 - (correctEncodedBits / allReceivedBits.length)) * 10000) * 0.01
+  document.getElementById('received-encoded-bits-error-percent').innerText = (
+    Math.floor((1 - (correctEncodedBits / allEncodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
-  document.getElementById('decoded-data-error-percent').innerText = (
+  document.getElementById('received-raw-bits-error-percent').innerText = (
+    Math.floor((1 - (correctRawBits / allRawBits.length)) * 10000) * 0.01
+  ).toLocaleString();
+  document.getElementById('received-decoded-bits-error-percent').innerText = (
     Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
   document.getElementById('decoded-text').innerHTML = allDecodedBits.reduce(textExpectorReducer(EXPECTED_TEXT), '');
@@ -1028,14 +1093,21 @@ const bitReducer = (packetBitSize, blockSize, blockCallback) => (all, bit, i)  =
   }
   return all + bit;
 }
-const bitExpectorReducer = (expected, packetBitSize, blockSize) => (all, bit, i) => {
+const bitExpectorReducer = (expected, packetBitSize, blockSize, blockCallback) => (all, bit, i) => {
   const packetIndex = Math.floor(i / packetBitSize);
   if(i % packetBitSize === 0) {
     all += `<span class="bit-packet">Packet ${packetIndex}</span>`;
   }
   const packetBitIndex = i % packetBitSize;
 
-  if(packetBitIndex !== 0 && packetBitIndex % blockSize === 0) all += ' ';
+  if(packetBitIndex % blockSize === 0) {
+    if(blockCallback) {
+      const blockIndex = Math.floor(packetBitIndex / blockSize)
+      all += blockCallback(packetIndex, blockIndex);
+    } else if (packetBitIndex !== 0) {
+      all += ' ';
+    }
+  }
   if(i >= expected.length) {
     all += '<span class="bit-unexpected">';
   } else if(expected[i] !== bit) {
@@ -1115,8 +1187,7 @@ function handleSendButtonClick() {
     disconnectOscillators();
     return;
   }
-  receivedDataTextarea.value = '';
-  sentDataTextArea.value = '';
+  resetReceivedData();
 
   const text = document.getElementById('text-to-send').value;
   EXPECTED_TEXT = text;
