@@ -1030,28 +1030,25 @@ function processSegmentReceived(packetStarted, packetIndex, segmentIndex) {
 
 function updateReceivedData() {
   const channelCount = getChannels().length;
-  const allRawBits = [
+  let allRawBits = [
     ...RECEIVED_STREAM_RAW_BITS,
     ...RECEIVED_PACKET_RAW_BITS
   ];
 
-  const allEncodedBits = [
+  let allEncodedBits = [
     ...RECEIVED_STREAM_ENCODED_BITS,
     ...RECEIVED_PACKET_ENCODED_BITS
   ];
-  const allDecodedBits = [
+  let allDecodedBits = [
     ...RECEIVED_STREAM_DECODED_BITS,
     ...RECEIVED_PACKET_DECODED_BITS
   ]
 
-  let dataLength = allDecodedBits.length / 8;
-  if(allDecodedBits.length >= MAXIMUM_PACKETIZATION_SIZE_BITS) {
-    dataLength = bitsToInt(allDecodedBits.slice(0, MAXIMUM_PACKETIZATION_SIZE_BITS), MAXIMUM_PACKETIZATION_SIZE_BITS);
-  }
-  // remove size header
-  allDecodedBits.splice(0, MAXIMUM_PACKETIZATION_SIZE_BITS);
-  // remove excessive bits
-  allDecodedBits.splice(dataLength * 8);
+  // reduce all decoded bits based on original data sent
+  allDecodedBits = removeDecodedHeadersAndPadding(allDecodedBits);
+
+  // reduce encoded bits based on original data sent
+  allEncodedBits = removeEncodedPadding(allEncodedBits);
 
   const encodedBitCount = SENT_ENCODED_BITS.length;
   const decodedBitCount = SENT_ORIGINAL_BITS.length;
@@ -1101,6 +1098,64 @@ function updateReceivedData() {
     Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
   document.getElementById('decoded-text').innerHTML = allDecodedBits.reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '');
+}
+function removeEncodedPadding(bits) {
+  const sizeBits = MAXIMUM_PACKETIZATION_SIZE_BITS;
+  const dataSize = ERROR_CORRECTION_DATA_SIZE;
+  const blockSize = ERROR_CORRECTION_BLOCK_SIZE;
+  let bitsNeeded = sizeBits;
+  let blocksNeeded = sizeBits;
+  // need to calc max bits
+  if(HAMMING_ERROR_CORRECTION) {
+    blocksNeeded = Math.ceil(sizeBits / dataSize);
+    bitsNeeded = blocksNeeded * blockSize;
+  }
+  if(bits.length < bitsNeeded) {
+    // unable to parse size just yet
+    return bits;
+  }
+
+  // get bits representing the size
+  let dataSizeBits = [];
+  if(HAMMING_ERROR_CORRECTION) {
+    for(i = 0; i < blocksNeeded; i++) {
+      const block = bits.slice(i * blockSize, (i + 1) * blockSize);
+      dataSizeBits.push(...hammingToNibble(block));
+    }
+    dataSizeBits.length = sizeBits;
+  } else {
+    dataSizeBits = bits.slice(0, sizeBits);
+  }
+  // decode the size
+  const dataByteCount = bitsToInt(dataSizeBits, sizeBits);
+
+  // determine how many decoded bits need to be sent (including the size)
+  const totalBits = (dataByteCount * 8) + sizeBits;
+  let encodingBitCount = totalBits;
+  if(HAMMING_ERROR_CORRECTION) {
+    const blocks = Math.ceil(encodingBitCount / dataSize);
+    encodingBitCount = blocks * blockSize;
+  }
+
+  // bits are padded
+  if(bits.length > encodingBitCount) {
+    // remove padding
+    bits = bits.slice();
+    bits.length = encodingBitCount;
+  }
+  return bits;
+}
+function removeDecodedHeadersAndPadding(bits) {
+  const sizeBits = MAXIMUM_PACKETIZATION_SIZE_BITS;
+  let bitCount = bits.length / 8;
+  if(bits.length >= sizeBits) {
+    bitCount = bitsToInt(bits.slice(0, sizeBits), sizeBits);
+  }
+  // remove size header
+  bits.splice(0, sizeBits);
+  // remove excessive bits
+  bits.splice(bitCount * 8);
+  return bits;
 }
 const bitReducer = (packetBitSize, blockSize, blockCallback) => (all, bit, i)  => {
   const packetIndex = Math.floor(i / packetBitSize);
