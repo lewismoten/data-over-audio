@@ -274,7 +274,7 @@ function updatePacketStats() {
   document.getElementById('data-byte-count').innerText = (bits.length / 8).toLocaleString();
   document.getElementById('data-bit-count').innerText = bits.length.toLocaleString();
   document.getElementById('packet-bit-count').innerText = getPacketBitCount().toLocaleString();
-  document.getElementById('packet-count').innerText = getPacketCount(bits).toLocaleString();
+  document.getElementById('packet-count').innerText = getPacketCount(bits.length).toLocaleString();
   document.getElementById('packet-error-correction').innerText = HAMMING_ERROR_CORRECTION ? 'Yes' : 'No';
   document.getElementById('packet-error-block-count').innerText = getPacketErrorBlockCount().toLocaleString();
   document.getElementById('packet-data-bit-count').innerText = getPacketDataBitCount().toLocaleString();
@@ -283,7 +283,7 @@ function updatePacketStats() {
   document.getElementById('last-segment-unused-channel-count').innerText = getPacketLastSegmentUnusedChannelCount().toLocaleString()
   document.getElementById('packet-transfer-duration').innerText = getPacketDurationSeconds(bits).toLocaleString() + 's';
   document.getElementById('segment-transfer-duration').innerText = getSegmentTransferDurationSeconds().toLocaleString() + 's';
-  document.getElementById('data-transfer-duration').innerText = getDataTransferDurationSeconds(bits).toLocaleString() + 's';
+  document.getElementById('data-transfer-duration').innerText = getDataTransferDurationSeconds(bits.length).toLocaleString() + 's';
   document.getElementById('segments-per-packet').innerText = getPacketSegmentCount().toLocaleString();
 }
 function drawChannels() {
@@ -471,38 +471,30 @@ function logSent(text) {
   sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
 }
 function sendBits(bits) {
-  if(bits.length === 0) {
+  const bitCount = bits.length;
+  if(bitCount === 0) {
     logSent('No bits to send!');
     return;
-  } else if(bits.length % 8 !== 0 || bits.length === 0) {
-    logSent('Bit count must be divisible by 8.');
-    return;
   }
-  const channelCount = getChannels().length;
-
   EXPECTED_BITS = bits.slice();
-
-  document.getElementById('sent-data').value = bits.reduce(bitReducer, '');
-
   EXPECTED_ENCODED_BITS = [];
 
+  // add 100ms delay before sending
   const startSeconds = audioContext.currentTime + 0.1;
   const startMilliseconds = startSeconds * 1000;
 
-  const packetCount = getPacketCount(bits);
   const packetBitCount = getPacketBitCount();
-  const totalDurationSeconds = getDataTransferDurationSeconds(bits);
-  const totalDurationMilliseconds = getDataTransferDurationSeconds(bits);
   const packetDurationSeconds = getPacketDurationSeconds();
-
-  sendButton.innerText = 'Stop';
+  const packetCount = getPacketCount(bitCount);
+  const totalDurationSeconds = getDataTransferDurationSeconds(bitCount);
+  const totalDurationMilliseconds = getDataTransferDurationMilliseconds(bitCount);
 
   createOscillators(startSeconds);
   // send all packets
   for(let i = 0; i < packetCount; i++) {
     let packet = getPacketBits(bits, i);
     if(packet.length > packetBitCount) {
-      console.error('cant send packet of %s bits with more than %s bits', packet.length, packetBitCount);
+      console.error('Too many bits in the packet.');
       disconnectOscillators();
       return;
     }
@@ -515,18 +507,35 @@ function sendBits(bits) {
     disconnectOscillators,
     startMilliseconds + totalDurationMilliseconds
   );
-  document.getElementById('encoded-data').value = EXPECTED_ENCODED_BITS.reduce(bitReducer, '');
+  // show what was sent
+  document.getElementById('sent-data').value =
+    EXPECTED_BITS.reduce(bitReducer, '');
+  document.getElementById('encoded-data').value =
+    EXPECTED_ENCODED_BITS.reduce(bitReducer, '');
 
   // start the graph moving again
   resumeGraph();
 }
+function sendPacket(bits, packetStartSeconds) {
+  const channels = getChannels();
+  const channelCount = channels.length;
+  let bitCount = bits.length;
+  const segmentDurationSeconds = getSegmentTransferDurationSeconds();
+  for(let i = 0; i < bitCount; i += channelCount) {
+    const segmentBits = bits.slice(i, i + channelCount);
+    const segmentIndex = Math.floor(i / channelCount);
+    var offsetSeconds = segmentIndex * segmentDurationSeconds;
+    changeOscillators(segmentBits, packetStartSeconds + offsetSeconds);
+  }
+}
+
 let stopTimeoutId;
 
-function getDataTransferDurationMilliseconds(bits) {
-  return getPacketCount(bits) * getPacketDurationMilliseconds();
+function getDataTransferDurationMilliseconds(bitCount) {
+  return getPacketCount(bitCount) * getPacketDurationMilliseconds();
 }
-function getDataTransferDurationSeconds(bits) {
-  return getDataTransferDurationMilliseconds(bits) / 1000;
+function getDataTransferDurationSeconds(bitCount) {
+  return getDataTransferDurationMilliseconds(bitCount) / 1000;
 }
 function getPacketDurationMilliseconds() {
   return getPacketSegmentCount() * SEGMENT_DURATION;
@@ -537,17 +546,23 @@ function getPacketDurationSeconds() {
 function getSegmentTransferDurationSeconds() {
   return SEGMENT_DURATION / 1000;
 }
+function getPacketByteCount() {
+  return 2 ** PACKET_SIZE_BITS;
+}
+function getPacketBitCount() {
+  return getPacketByteCount() * 8;
+}
 function getPacketSegmentCount() {
   return Math.ceil(getPacketBitCount() / getChannels().length);
 }
-function getPacketCount(bits) {
+function getPacketCount(bitCount) {
   if(!canSendPacket()) return 0;
 
   // How many data bits will be encoded in our packet?
   let dataBitCount = getPacketDataBitCount();
 
   // Return the total number of packets needed to send all data
-  return Math.ceil(bits.length / dataBitCount);
+  return Math.ceil(bitCount / dataBitCount);
 }
 function getPacketBits(bits, packetIndex) {
   if(!canSendPacket()) return [];
@@ -590,14 +605,6 @@ function getPacketErrorBlockCount() {
     ERROR_CORRECTION_BLOCK_SIZE
   );
 }
-function getPacketByteCount() {
-  // Convert packet size as power of 2
-  return 2 ** PACKET_SIZE_BITS;
-}
-function getPacketBitCount() {
-  // 8 bits per byte
-  return getPacketByteCount() * 8;
-}
 function canSendPacket() {
   const max = getPacketBitCount();
   // Need at least 1 bit to send
@@ -618,7 +625,7 @@ function getPacketUnusedBitCount() {
   return getPacketBitCount() - getPacketDataBitCount();
 }
 function getPacketLastUnusedBitCount(bits) {
-  const packetCount = getPacketCount(bits);
+  const packetCount = getPacketCount(bits.length);
   const availableBits = getPacketBitCount();
   const usedBits = getPacketUsedBits(bits, packetCount-1).length;
   return availableBits - usedBits;
@@ -636,13 +643,8 @@ function padArray(values, length, value) {
   while(values.length < length) values.push(value);
   return values;
 }
-
 const CHANNEL_OSCILLATORS = [];
-function getOscillators() {
-  return CHANNEL_OSCILLATORS;
-}
 function createOscillators(streamStartSeconds) {
-  console.log('create oscillators', streamStartSeconds);
   const oscillators = getOscillators();
   if(oscillators.length !== 0) disconnectOscillators();
   var audioContext = getAudioContext();
@@ -657,21 +659,26 @@ function createOscillators(streamStartSeconds) {
     oscillator.start(streamStartSeconds);
     oscillators.push(oscillator);
   }
+  sendButton.innerText = 'Stop';
   return oscillators;
 }
-function disconnectOscillators() {
-  console.log('disconnect oscillators');
-  stopOscillators(getAudioContext().currentTime);
+function getOscillators() {
+  return CHANNEL_OSCILLATORS;
+}
+function changeOscillators(bits, startSeconds) {
   const oscillators = getOscillators();
-  oscillators.forEach(
-    oscillator => oscillator.disconnect()
-  )
-  oscillators.length = 0;
-  sendButton.innerText = 'Send';
-  stopTimeoutId = undefined;
+  getChannels().forEach((channel, i) => {
+    // missing bits past end of bit stream set to zero
+    const isHigh = bits[i] ?? 0;
+    const oscillator = oscillators[i];
+    // already at correct frequency
+    if(oscillator.on === isHigh) return;
+    oscillator.on = isHigh;
+    const hz = channel[isHigh ? 1 : 0];
+    oscillator.frequency.setValueAtTime(hz, startSeconds);
+  });
 }
 function stopOscillators(streamEndSeconds) {
-  console.log('stop oscillators', streamEndSeconds);
   const channels = getChannels();
   const oscillators = getOscillators();
   const channelCount = channels.length;
@@ -681,36 +688,15 @@ function stopOscillators(streamEndSeconds) {
     oscillator?.stop(streamEndSeconds);
   }
 }
-function sendPacket(bits, packetStartSeconds) {
-  console.log('packet start', packetStartSeconds);
-  const channels = getChannels();
+function disconnectOscillators() {
+  stopOscillators(getAudioContext().currentTime);
   const oscillators = getOscillators();
-  const channelCount = channels.length;
-  let bitCount = bits.length;
-  const lastChannel = bits.length % channelCount;
-  if(lastChannel !== channelCount - 1) {
-    // make sure all channels are set for the last segment
-    bitCount += (channelCount - lastChannel)
-  }
-
-  const segmentDurationSeconds = getSegmentTransferDurationSeconds();
-  // change our channel frequencies for the bit
-  for(let i = 0; i < bitCount; i++) {
-    // missing bits past end of bit stream set to zero
-    const isHigh = bits[i] ?? 0;
-
-    const channel = i % channelCount;
-
-    // already at correct frequency
-    if(oscillators[channel].on === isHigh) continue;
-    oscillators[channel].on = isHigh;
-    const segmentIndex = Math.floor(i / channelCount);
-    var offsetSeconds = segmentIndex * segmentDurationSeconds;
-    oscillators[channel].frequency.setValueAtTime(
-      channels[channel][isHigh ? 1 : 0],
-      packetStartSeconds + offsetSeconds
-    );
-  }
+  oscillators.forEach(
+    oscillator => oscillator.disconnect()
+  )
+  oscillators.length = 0;
+  sendButton.innerText = 'Send';
+  stopTimeoutId = undefined;
 }
 function stopGraph() {
   PAUSE = true;
@@ -1227,7 +1213,7 @@ function drawFrequencyLineGraph(ctx, channel, highLowIndex, color, lineWidth, da
     const {pairs, time} = frequencyOverTime[i];
     const x = getTimeX(time, newest);
     if(x === -1) continue;
-    if(channel > pairs.length) continue;
+    if(channel >= pairs.length) continue;
     const amplitude = pairs[channel][highLowIndex];
     const y = getPercentY(amplitude / MAX_AMPLITUDE);
     if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -1490,6 +1476,7 @@ function drawSelectedChannel(ctx, channelCount, width, height) {
 }
 function drawChannelNumbers(ctx, channelCount, width, height) {
   const offset = 0;
+  const channels = getChannels();
   const channelHeight = height / channelCount;
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
@@ -1502,8 +1489,9 @@ function drawChannelNumbers(ctx, channelCount, width, height) {
     let top = channelHeight * channelIndex;
     let text = realChannel(channelIndex).toString();
     const textTop = top + (channelHeight / 2);
-    const hue = channelHue(channelIndex, channelCount);
-    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+    // const hue = channelHue(channelIndex, channelCount);
+    const highHue = hzHue(channels[channelIndex][1]);
+    ctx.fillStyle = `hsl(${highHue}, 100%, 50%)`;
     ctx.fillText(text, offset + 5, textTop);
   }
 }
@@ -1543,18 +1531,24 @@ function drawFrequencyData(forcedDraw) {
   const highLuminance = isSelectedOrOver ? 25 : 50;
   const lowLuminance = isSelectedOrOver ? 12 : 25;
   frequencies.forEach((v, channel) => {
-    const hue = channelHue(channel, frequencies.length);
-    drawFrequencyLineGraph(ctx, channel, high, `hsl(${hue}, 100%, ${highLuminance}%)`, 2, false);
-    drawFrequencyLineGraph(ctx, channel, low, `hsl(${hue}, 100%, ${lowLuminance}%)`, 1, true);
+    // const hue = channelHue(channel, frequencies.length);
+    const lowHue = hzHue(v[0]);
+    const highHue = hzHue(v[1]);
+    drawFrequencyLineGraph(ctx, channel, high, `hsl(${highHue}, 100%, ${highLuminance}%)`, 2, false);
+    drawFrequencyLineGraph(ctx, channel, low, `hsl(${lowHue}, 100%, ${lowLuminance}%)`, 1, true);
   });
   if(CHANNEL_OVER !== -1) {
-    const hue = channelHue(CHANNEL_OVER, frequencies.length);
-    drawFrequencyLineGraph(ctx, CHANNEL_OVER, high, `hsl(${hue}, 100%, 50%)`, 2, false);
-    drawFrequencyLineGraph(ctx, CHANNEL_OVER, low, `hsl(${hue}, 100%, 25%)`, 1, true);
+    // const hue = channelHue(CHANNEL_OVER, frequencies.length);
+    const lowHue = hzHue(frequencies[CHANNEL_OVER][0]);
+    const highHue = hzHue(frequencies[CHANNEL_OVER][1]);
+    drawFrequencyLineGraph(ctx, CHANNEL_OVER, high, `hsl(${highHue}, 100%, 50%)`, 2, false);
+    drawFrequencyLineGraph(ctx, CHANNEL_OVER, low, `hsl(${lowHue}, 100%, 25%)`, 1, true);
   } else if(CHANNEL_SELECTED !== -1) {
-    const hue = channelHue(CHANNEL_SELECTED, frequencies.length);
-    drawFrequencyLineGraph(ctx, CHANNEL_SELECTED, high, `hsl(${hue}, 100%, 50%)`, 2, false);
-    drawFrequencyLineGraph(ctx, CHANNEL_SELECTED, low, `hsl(${hue}, 100%, 25%)`, 1, true);
+    const lowHue = hzHue(frequencies[CHANNEL_SELECTED][0]);
+    const highHue = hzHue(frequencies[CHANNEL_SELECTED][1]);
+    // const hue = channelHue(CHANNEL_SELECTED, frequencies.length);
+    drawFrequencyLineGraph(ctx, CHANNEL_SELECTED, high, `hsl(${highHue}, 100%, 50%)`, 2, false);
+    drawFrequencyLineGraph(ctx, CHANNEL_SELECTED, low, `hsl(${lowHue}, 100%, 25%)`, 1, true);
   }
 
   drawSegmentIndexes(ctx, width, height);
@@ -1564,6 +1558,9 @@ function drawFrequencyData(forcedDraw) {
 
 function channelHue(channelId, channelCount) {
   return Math.floor((channelId / channelCount) * 360);
+}
+function hzHue(hz) {
+  return Math.floor((hz / 20000) * 360);
 }
 
 function drawReceivedData() {
