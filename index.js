@@ -304,8 +304,9 @@ function updatePacketStats() {
   const bits = textToBits(text);
   const bitCount = getPacketizationBitCount(bits.length);
   const byteCount = bitCount / 8;
-  document.getElementById('data-byte-count').innerText = byteCount.toLocaleString();
-  document.getElementById('data-bit-count').innerText = bitCount.toLocaleString();
+  document.getElementById('original-byte-count').innerText = textToBytes(text).length.toLocaleString();
+  document.getElementById('packetization-byte-count').innerText = byteCount.toLocaleString();
+  document.getElementById('packetization-bit-count').innerText = bitCount.toLocaleString();
   document.getElementById('packet-bit-count').innerText = getPacketBitCount().toLocaleString();
   document.getElementById('packet-count').innerText = getPacketCount(bitCount).toLocaleString();
   document.getElementById('packet-error-correction').innerText = HAMMING_ERROR_CORRECTION ? 'Yes' : 'No';
