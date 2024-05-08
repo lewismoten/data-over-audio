@@ -12,6 +12,11 @@ var receivedGraph;
 var receivedData = [];
 var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
 
+let RECEIVED_STREAM_DECODED_BITS = [];
+let RECEIVED_PACKET_DECODED_BITS = [];
+let RECEIVED_PACKET_BITS = [];
+let RECEIVED_STREAM_BITS = [];
+
 const CHANNEL_OSCILLATORS = [];
 
 // bit stream
@@ -301,6 +306,8 @@ function updatePacketStats() {
   document.getElementById('data-transfer-duration').innerText = getDataTransferDurationSeconds(bitCount).toLocaleString() + 's';
   document.getElementById('segments-per-packet').innerText = getPacketSegmentCount().toLocaleString();
   document.getElementById('total-segments').innerText = getTotalSegmentCount(bitCount).toLocaleString();
+  document.getElementById('packet-error-bits-per-block').innerText = (HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_BLOCK_SIZE : 0).toLocaleString();
+  document.getElementById('packet-error-bit-count').innerText = getPacketErrorBitCount();
 }
 function drawChannels() {
   const sampleRate = getAudioContext().sampleRate;
@@ -343,14 +350,6 @@ function drawChannels() {
     ctx.stroke();
 
   }
-/*
-  const binWidth = (1 / frequencySegments) * width;
-  for(let x = 0; x < width; x+= binWidth * 2) {
-    console.log(x);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-    ctx.fillRect(x, 0, binWidth, height);
-  }
-  */
 }
 
 function percentInFrequency(hz, frequencyResolution) {
@@ -505,16 +504,23 @@ function sendBits(bits) {
   const totalDurationSeconds = getDataTransferDurationSeconds(bitCount);
   const totalDurationMilliseconds = getDataTransferDurationMilliseconds(bitCount);
 
+  const channelCount = getChannels().length;
+  const errorCorrectionBits = [];
+  const interleavingBits = [];
+
   createOscillators(startSeconds);
   // send all packets
   for(let i = 0; i < packetCount; i++) {
     let packet = getPacketBits(bits, i);
+    errorCorrectionBits.push(...packet);
     if(packet.length > packetBitCount) {
       console.error('Too many bits in the packet.');
       disconnectOscillators();
       return;
     }
+    packet = padArray(packet, packetBitCount, 0);
     packet = applyInterleaving(packet);
+    interleavingBits.push(...packet);
     EXPECTED_ENCODED_BITS.push(...packet);
     sendPacket(packet, startSeconds + (i * packetDurationSeconds));
   }
@@ -524,10 +530,31 @@ function sendBits(bits) {
     startMilliseconds + totalDurationMilliseconds
   );
   // show what was sent
-  document.getElementById('sent-data').value =
-    EXPECTED_BITS.reduce(bitReducer, '');
-  document.getElementById('encoded-data').value =
-    EXPECTED_ENCODED_BITS.reduce(bitReducer, '');
+
+  // original bits
+  document.getElementById('sent-data').innerHTML =
+    EXPECTED_BITS.reduce(bitReducer(
+      getPacketDataBitCount(),
+      HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_DATA_SIZE : 8
+    ), '');
+  
+  // error correcting bits
+  if(HAMMING_ERROR_CORRECTION) {
+    document.getElementById('error-correcting-data').innerHTML =
+    errorCorrectionBits.reduce(bitReducer(
+      getPacketErrorBitCount(),
+      ERROR_CORRECTION_BLOCK_SIZE
+    ), '');
+  } else {
+    document.getElementById('error-correcting-data').innerHTML = '';
+  }
+
+  document.getElementById('actual-bits-to-send').innerHTML = 
+  interleavingBits.reduce(bitReducer(
+    getPacketBitCount() + getPacketLastSegmentUnusedChannelCount(),
+    channelCount,
+    (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
+  ), '');  
 
   // start the graph moving again
   resumeGraph();
@@ -583,13 +610,7 @@ function getPacketCount(bitCount) {
 }
 function getPacketBits(bits, packetIndex) {
   if(!canSendPacket()) return [];
-  const packetBits = getPacketUsedBits(bits, packetIndex);  
-
-  // How many bits expected in our packet?
-  const packetBitCount = getPacketBitCount();
-
-  // pad the array to the entire packet size
-  return padArray(packetBits, packetBitCount, 0);
+  return getPacketUsedBits(bits, packetIndex);  
 }
 function getPacketUsedBits(bits, packetIndex) {
   if(!canSendPacket()) return [];
@@ -622,6 +643,9 @@ function getPacketErrorBlockCount() {
     ERROR_CORRECTION_BLOCK_SIZE
   );
 }
+function getPacketErrorBitCount() {
+  return getPacketErrorBlockCount() * ERROR_CORRECTION_BLOCK_SIZE;
+}
 function canSendPacket() {
   const max = getPacketBitCount();
   // Need at least 1 bit to send
@@ -639,7 +663,12 @@ function getPacketLastSegmentUnusedChannelCount() {
   return (channelCount - (getPacketBitCount() % channelCount));
 }
 function getPacketUnusedBitCount() {
-  return getPacketBitCount() - getPacketDataBitCount();
+  const bitsAvailable = getPacketBitCount();
+  let bitsUsed = bitsAvailable;
+  if(HAMMING_ERROR_CORRECTION) {
+    bitsUsed = getPacketErrorBitCount();
+  }
+  return bitsAvailable - bitsUsed;
 }
 function getPacketLastUnusedBitCount(bitCount) {
   const availableBits = getPacketBitCount();
@@ -764,7 +793,8 @@ function collectSample() {
     hasSignal: hadPriorSignal,
     streamStarted: initialStreamStart = -1,
     streamEnded: priorStreamEnded = -1,
-    segmentIndex: priorSegmentIndex = -1
+    segmentIndex: priorSegmentIndex = -1,
+    packetIndex: priorPacketIndex = -1
   } = frequencyOverTime[0] ?? {}
   const data = {
     time,
@@ -775,43 +805,51 @@ function collectSample() {
   // Get amplitude of each channels set of frequencies
   data.pairs = getChannels().map(hzSet => hzSet.map(hz => frequencies[Math.round(hz / length)]));
   const hasSignal = data.hasSignal = data.pairs.some(amps => amps.some(amp => amp > AMPLITUDE_THRESHOLD));
-
+  let processPacket = false;
   if(hasSignal) {
     if(hadPriorSignal) {
       // continued bit stream
       data.streamStarted = initialStreamStart;
-
-      // proposed end
       data.streamEnded = priorStreamEnded;
+      data.packetIndex = priorPacketIndex;
+
+      if(time > priorStreamEnded) {
+        processPacketReceived(priorPacketIndex, initialStreamStart, priorStreamEnded);
+        // new packet
+        data.streamStarted = priorStreamEnded;
+        data.streamEnded = initialStreamStart + getPacketDurationMilliseconds();
+        data.packetIndex = priorPacketIndex + 1;
+      }
     } else {
-      const totalBits = 2 ** PACKET_SIZE_BITS;
-      const segments = Math.ceil(totalBits / channelCount);
-      const duration = segments * SEGMENT_DURATION;
       if(pauseGraphId) {
         window.clearTimeout(pauseGraphId);
         pauseGraphId = undefined;
         // recover prior bit stream
         data.streamStarted = LAST_STREAM_STARTED;
-        data.streamEnded = LAST_STREAM_STARTED + duration;
+        data.streamEnded = LAST_STREAM_STARTED + getPacketDurationMilliseconds();
       } else {
           // new bit stream
         data.streamStarted = time;
         LAST_STREAM_STARTED = time;
+        data.packetIndex = 0;
         // clear last packet
         packetReceivedBits.length = 0;
         packetUninterlievedBits.length = 0;
         packetDataByteCount = 0;
-        data.streamEnded = time + duration;    
+        data.streamEnded = time + getPacketDurationMilliseconds();    
       }
     }
 
-    // number of bit in the stream
+    // number of bit in the packet
     const segmentIndex = data.segmentIndex = Math.floor((time - data.streamStarted) / SEGMENT_DURATION);
-    if(priorSegmentIndex !== segmentIndex && priorSegmentIndex > -1) {
+    if(priorPacketIndex !== data.packetIndex ||
+        (priorSegmentIndex !== segmentIndex && priorSegmentIndex > -1)
+    ) {
       processSegment = true;
     }
   } else {
     data.segmentIndex = -1;
+    data.packetIndex = -1;
     if(hadPriorSignal) {
       // just stopped
       data.streamStarted = -1;
@@ -828,6 +866,7 @@ function collectSample() {
          pauseGraphId = window.setTimeout(() => {
           pauseGraphId = undefined;
           if(PAUSE_AFTER_END) stopGraph();
+          processPacketReceived(priorPacketIndex, initialStreamStart, priorStreamEnded);
         }, SEGMENT_DURATION * 2);
       }
     } else {
@@ -863,72 +902,140 @@ function GET_SEGMENT_BITS(streamStarted, segmentIndex, originalOrder = false) {
   const bitValues = sums.map((amps) => amps[0] > amps[1] ? 0 : 1);
   return originalOrder ? bitValues : removeInterleaving(bitValues);
 }
-function processSegmentReceived(streamStarted, segmentIndex) {
-  const {
-    pairs: {
-      length: channelCount
-    }
-  } = frequencyOverTime[0];
+
+function processPacketReceived(packetIndex, startMs, endMs) {
+  if(packetIndex === 0) {
+    // Reset received data from last stream
+    RECEIVED_STREAM_BITS.length = 0;
+    RECEIVED_STREAM_DECODED_BITS.length = 0;
+  }
+  // append to the stream
+  RECEIVED_STREAM_BITS.push(...RECEIVED_PACKET_BITS);
+  RECEIVED_STREAM_DECODED_BITS.push(...RECEIVED_PACKET_DECODED_BITS);
+
+  // reset the packet
+  RECEIVED_PACKET_BITS.length = 0;
+  RECEIVED_PACKET_DECODED_BITS.length = 0;
+  packetReceivedBits.length = 0;
+  packetUninterlievedBits.length = 0;
+  packetDecodedBits.length = 0;
+  // display what was received
+  updateReceivedData();
+}
+function processSegmentReceived(packetStarted, segmentIndex) {
   // is our segment long enough?
 
   const samples = frequencyOverTime.filter(
-    fot => fot.streamStarted === streamStarted &&
+    fot => fot.streamStarted === packetStarted &&
     fot.segmentIndex === segmentIndex
   );
 
   let bitValues;
   if(samples.length === 0) {
     // nothing collected
-    // bitValues = new Array(channelCount).fill(0);
     return;
   } else {
-const sampleEnd = samples[0].time;
-const sampleStart = streamStarted + (segmentIndex * SEGMENT_DURATION);
-const sampleDuration = (sampleEnd - sampleStart) + MINIMUM_INTERVAL_MS;
+    const sampleEnd = samples[0].time;
+    const sampleStart = packetStarted + (segmentIndex * SEGMENT_DURATION);
+    const sampleDuration = (sampleEnd - sampleStart) + MINIMUM_INTERVAL_MS;
 
-// not long enough to qualify as a segment
-if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
+    // not long enough to qualify as a segment
+    if((sampleDuration / SEGMENT_DURATION) < LAST_SEGMENT_PERCENT) return;
 
-    bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex, true);
+    bitValues = GET_SEGMENT_BITS(packetStarted, segmentIndex, true);
   }
+
   packetReceivedBits.push(...bitValues);
+  
   packetUninterlievedBits.push(...removeInterleaving(bitValues));
 
   if(HAMMING_ERROR_CORRECTION) {
+    const errorBitCount = getPacketErrorBitCount();
+    const errorBits = packetUninterlievedBits.slice(0, errorBitCount);
     packetDecodedBits.length = 0;
-    for(let i = 0; i < packetUninterlievedBits.length; i += ERROR_CORRECTION_BLOCK_SIZE) {
-      const hamming = packetUninterlievedBits.slice(i, i + ERROR_CORRECTION_BLOCK_SIZE);
-      const nibble = hammingToNibble(hamming);
-      packetDecodedBits.push(...nibble);
+    for(let i = 0; i < errorBits.length; i += ERROR_CORRECTION_BLOCK_SIZE) {
+      const blockBits = errorBits.slice(i, i + ERROR_CORRECTION_BLOCK_SIZE);
+      if(blockBits.length === ERROR_CORRECTION_BLOCK_SIZE) {
+        const nibble = hammingToNibble(blockBits);
+        packetDecodedBits.push(...nibble);
+      }
     }
   } else {
     packetDecodedBits.length = 0;
     packetDecodedBits.push(...packetUninterlievedBits);
   }
 
-  document.getElementById('decoded-data').innerHTML = packetDecodedBits.reduce(bitExpectorReducer(EXPECTED_BITS), '');
-  document.getElementById('received-data').innerHTML = packetReceivedBits.reduce(bitExpectorReducer(EXPECTED_ENCODED_BITS), '');
+  const maxPacketBits = getPacketBitCount();
+  const maxDataBits = getPacketDataBitCount();
 
+  RECEIVED_PACKET_DECODED_BITS = packetDecodedBits.slice(0, maxDataBits);
+  RECEIVED_PACKET_BITS = packetReceivedBits.slice(0, maxPacketBits);
+
+  updateReceivedData();
+}
+
+function updateReceivedData() {
+  const allReceivedBits = [
+    ...RECEIVED_STREAM_DECODED_BITS,
+    ...RECEIVED_PACKET_DECODED_BITS
+  ];
+  const allDecodedBits = [
+    ...RECEIVED_STREAM_BITS,
+    ...RECEIVED_PACKET_BITS
+  ]
   const encodedBitCount = EXPECTED_ENCODED_BITS.length;
   const decodedBitCount = EXPECTED_BITS.length;
-  const correctEncodedBits = packetReceivedBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
-  const correctedDecodedBits = packetDecodedBits.filter((b, i) => i < decodedBitCount && b === EXPECTED_BITS[i]).length;
+  const correctEncodedBits = allReceivedBits.filter((b, i) => i < encodedBitCount && b === EXPECTED_ENCODED_BITS[i]).length;
+  const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === EXPECTED_BITS[i]).length;
+
+  document.getElementById('received-data').innerHTML = allReceivedBits
+    .reduce(
+      bitExpectorReducer(
+        EXPECTED_BITS,
+        getPacketBitCount(),
+        HAMMING_ERROR_CORRECTION ? 7 : 8
+      ),
+    '');
+  document.getElementById('decoded-data').innerHTML = allDecodedBits
+    .reduce(
+      bitExpectorReducer(
+        EXPECTED_ENCODED_BITS,
+        getPacketDataBitCount(),
+        8
+      ),
+    '');
+
   document.getElementById('received-data-error-percent').innerText = (
-    Math.floor((1 - (correctEncodedBits / packetReceivedBits.length)) * 1000) * 0.1
+    Math.floor((1 - (correctEncodedBits / allReceivedBits.length)) * 10000) * 0.01
   ).toLocaleString();
   document.getElementById('decoded-data-error-percent').innerText = (
-    Math.floor((1 - (correctedDecodedBits / packetDecodedBits.length)) * 1000) * 0.1
+    Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
-  document.getElementById('decoded-text').innerHTML = packetDecodedBits.reduce(textExpectorReducer(EXPECTED_TEXT), '');
+  document.getElementById('decoded-text').innerHTML = allDecodedBits.reduce(textExpectorReducer(EXPECTED_TEXT), '');
 }
-function bitReducer(all, bit, i) {
-  if(i !== 0 && i % 8 === 0) return all + ' ' + bit;
+const bitReducer = (packetBitSize, blockSize, blockCallback) => (all, bit, i)  => {
+  const packetIndex = Math.floor(i / packetBitSize);
+  if(i % packetBitSize === 0) {
+    all += `<span class="bit-packet">Packet ${packetIndex}</span>`;
+  }
+  const packetBitIndex = i % packetBitSize;
+  if(packetBitIndex % blockSize === 0) {
+    if(blockCallback) {
+      const blockIndex = Math.floor(packetBitIndex / blockSize);
+      return all + blockCallback(packetIndex, blockIndex) + bit;
+    }
+    return all + ' ' + bit;
+  }
   return all + bit;
 }
-const bitExpectorReducer = expected => (all, bit, i) => {
-  // if(i === 0) console.log(expected.slice(), all, bit, i);
+const bitExpectorReducer = (expected, packetBitSize, blockSize) => (all, bit, i) => {
+  const packetIndex = Math.floor(i / packetBitSize);
+  if(i % packetBitSize === 0) {
+    all += `<span class="bit-packet">Packet ${packetIndex}</span>`;
+  }
+  const packetBitIndex = i % packetBitSize;
 
-  if(i !== 0 && i % 8 === 0) all += ' ';
+  if(packetBitIndex !== 0 && packetBitIndex % blockSize === 0) all += ' ';
   if(i >= expected.length) {
     all += '<span class="bit-unexpected">';
   } else if(expected[i] !== bit) {

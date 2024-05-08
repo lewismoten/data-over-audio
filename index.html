@@ -17,7 +17,7 @@
       </label><br />
       <input type="text" id="text-to-send">
       <button id="send-button">Send</button><br />
-      <textarea id="sent-data" rows="10" cols="40"></textarea><br />
+      <div class="raw-data" id="sent-data"></div><br />
     </div>
     <div>
       <h2>Data</h2>
@@ -27,6 +27,8 @@
       Data Bits per Packet: <span id="packet-data-bit-count"></span><br>
       Error Correction: <span id="packet-error-correction"></span><br>
       Error Blocks per packet: <span id="packet-error-block-count"></span><br>
+      Error Bits per block: <span id="packet-error-bits-per-block"></span><br>
+      Error Correcting Bits per Packet: <span id="packet-error-bit-count"></span><br>
       Unused bits per packet: <span id="packet-unused-bit-count"></span><br>
       Unused bits in last packet: <span id="last-packet-unused-bit-count"></span><br>
       Last segment unused channels in packet: <span id="last-segment-unused-channel-count"></span><br>
@@ -38,8 +40,12 @@
       Total Duration: <span id="data-transfer-duration"></span><br>
     </div>
     <div>
-      <h2>Encoded</h2>
-      <textarea id="encoded-data" rows="10" cols="40"></textarea><br />
+      <h2>Error Correcting</h2>
+      <div class="raw-data" id="error-correcting-data"></div><br />
+    </div>
+    <div>
+      <h2 >Bits Sent</h2>
+      <div class="raw-data" id="actual-bits-to-send"></div><br />
     </div>
     <div>
       <label>

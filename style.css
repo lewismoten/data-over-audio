@@ -21,15 +21,21 @@ body {
 canvas {
   background-color: black;
 }
-textarea, .raw-data {
+.raw-data {
   background-color: rgb(41, 59, 10);
   color: rgb(75, 185, 75);
   width: 250px;
-  height: 75px;
+  height: 300px;
   font-size: x-small;
   border: 1px solid grey;
   overflow: auto;
   font-family: monospace;
+}
+.bit-packet {
+  display: block;
+  color: yellow;
+  text-decoration: underline;
+  padding: 5px 0 5px 10px
 }
 .bit-wrong {
   font-weight: bolder;
