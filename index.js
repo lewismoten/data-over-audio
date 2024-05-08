@@ -34,6 +34,7 @@ let PERIODIC_INTERLEAVING = true;
 let WAVE_FORM = "triangle";
 
 const ERROR_CORRECTION_BLOCK_SIZE = 7;
+const ERROR_CORRECTION_DATA_SIZE = 4;
 let CHANNEL_OVER = -1;
 let CHANNEL_SELECTED = -1;
 let SEGMENT_OVER = -1;
@@ -49,7 +50,7 @@ var samplesPerBit = [];
 var bitSampleCount = 0;
 var PAUSE = false;
 var PAUSE_AFTER_END = true;
-var PACKET_SIZE_BITS = 8;
+var PACKET_SIZE_BITS = 5; // 32 bytes, 256 bits
 
 var EXPECTED_ENCODED_BITS = [];
 var EXPECTED_BITS = [];
@@ -87,6 +88,7 @@ function handleWindowLoad() {
   document.getElementById('packet-size-power').addEventListener('input', event => {
     PACKET_SIZE_BITS = parseInt(event.target.value);
     document.getElementById('packet-size').innerText = friendlyByteSize(2 ** PACKET_SIZE_BITS);
+    showSpeed();
   });
   document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
   document.getElementById('error-correction-hamming').checked = HAMMING_ERROR_CORRECTION;
@@ -185,7 +187,7 @@ function handleTextToSendInput() {
   const text = textToSend.value;
   const dataByteCount = text.length;
   const dataBitCount = dataByteCount * 8;
-  const nibblesToEncode = HAMMING_ERROR_CORRECTION ? Math.ceil((dataBitCount) / 4) : 0;
+  const nibblesToEncode = HAMMING_ERROR_CORRECTION ? Math.ceil((dataBitCount) / ERROR_CORRECTION_DATA_SIZE) : 0;
   const errorCorrectionBits = nibblesToEncode * 3;
   const totalBits = errorCorrectionBits + dataBitCount;
   const totalBytes = Math.ceil(totalBits / 8);
@@ -203,6 +205,7 @@ function handleTextToSendInput() {
   document.getElementById('packet-send-segment-count').innerText = segmentCount.toLocaleString();
   document.getElementById('packet-send-segment-duration').innerText = (SEGMENT_DURATION / 1000).toLocaleString();
   document.getElementById('data-size-header-bits').innerText = '0';
+  updatePacketStats();
 }
 
 function updateFrequencyResolution() {
@@ -228,7 +231,7 @@ function showSpeed() {
   document.getElementById('data-transfer-speed-bits-per-second').innerText = baud.toFixed(2);
   document.getElementById('data-transfer-speed-bytes-per-second').innerText = bytes.toFixed(2);
   if(HAMMING_ERROR_CORRECTION) {
-    const effectiveBaud = baud * 4 / ERROR_CORRECTION_BLOCK_SIZE;
+    const effectiveBaud = baud * ERROR_CORRECTION_DATA_SIZE / ERROR_CORRECTION_BLOCK_SIZE;
     const effectiveBytes = effectiveBaud / 8;
     document.getElementById('effective-speed-bits-per-second').innerText = effectiveBaud.toFixed(2);
     document.getElementById('effective-speed-bytes-per-second').innerText = effectiveBytes.toFixed(2);
@@ -263,6 +266,25 @@ function showSpeed() {
   })
   handleTextToSendInput();
   drawChannels();
+  updatePacketStats();
+}
+function updatePacketStats() {
+  const text = textToSend.value;
+  const bits = textToBits(text);
+  document.getElementById('data-byte-count').innerText = (bits.length / 8).toLocaleString();
+  document.getElementById('data-bit-count').innerText = bits.length.toLocaleString();
+  document.getElementById('packet-bit-count').innerText = getPacketBitCount().toLocaleString();
+  document.getElementById('packet-count').innerText = getPacketCount(bits).toLocaleString();
+  document.getElementById('packet-error-correction').innerText = HAMMING_ERROR_CORRECTION ? 'Yes' : 'No';
+  document.getElementById('packet-error-block-count').innerText = getPacketErrorBlockCount().toLocaleString();
+  document.getElementById('packet-data-bit-count').innerText = getPacketDataBitCount().toLocaleString();
+  document.getElementById('packet-unused-bit-count').innerText = getPacketUnusedBitCount().toLocaleString();
+  document.getElementById('last-packet-unused-bit-count').innerText = getPacketLastUnusedBitCount(bits).toLocaleString();
+  document.getElementById('last-segment-unused-channel-count').innerText = getPacketLastSegmentUnusedChannelCount().toLocaleString()
+  document.getElementById('packet-transfer-duration').innerText = getPacketDurationSeconds(bits).toLocaleString() + 's';
+  document.getElementById('segment-transfer-duration').innerText = getSegmentTransferDurationSeconds().toLocaleString() + 's';
+  document.getElementById('data-transfer-duration').innerText = getDataTransferDurationSeconds(bits).toLocaleString() + 's';
+  document.getElementById('segments-per-packet').innerText = getPacketSegmentCount().toLocaleString();
 }
 function drawChannels() {
   const sampleRate = getAudioContext().sampleRate;
@@ -323,7 +345,7 @@ function percentInFrequency(hz, frequencyResolution) {
   return percent;
 }
 function nibbleToHamming(nibble) {
-  if(nibble.length !== 4) return [];
+  if(nibble.length !== ERROR_CORRECTION_DATA_SIZE) return [];
   return [
     nibble[0] ^ nibble[1] ^ nibble[3],
     nibble[0] ^ nibble[2] ^ nibble[3],
@@ -414,10 +436,10 @@ function staggerValues(values, blockSize, undo) {
 function applyErrorCorrection(bits) {
   if(!HAMMING_ERROR_CORRECTION) return bits;
   const encodedBits = [];
-  for(let i = 0; i < bits.length; i+= 4) {
-    const nibble = bits.slice(i, i + 4);
-    while(nibble.length < 4) nibble.push(0);
-    encodedBits.push(...nibbleToHamming(bits.slice(i, i + 4)));
+  for(let i = 0; i < bits.length; i+= ERROR_CORRECTION_DATA_SIZE) {
+    const nibble = bits.slice(i, i + ERROR_CORRECTION_DATA_SIZE);
+    while(nibble.length < ERROR_CORRECTION_DATA_SIZE) nibble.push(0);
+    encodedBits.push(...nibbleToHamming(bits.slice(i, i + ERROR_CORRECTION_DATA_SIZE)));
   }
   return encodedBits;
 }
@@ -449,76 +471,246 @@ function logSent(text) {
   sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
 }
 function sendBits(bits) {
-  const byteCount = bits.length / 8;
   if(bits.length === 0) {
     logSent('No bits to send!');
     return;
   } else if(bits.length % 8 !== 0 || bits.length === 0) {
     logSent('Bit count must be divisible by 8.');
     return;
-  } else if(byteCount > (1 << PACKET_SIZE_BITS)) {
-    logSent(`Can not transfer more than ${(1 << PACKET_SIZE_BITS)} bytes.`);
-    return;
   }
+  const channelCount = getChannels().length;
 
   EXPECTED_BITS = bits.slice();
 
   document.getElementById('sent-data').value = bits.reduce(bitReducer, '');
 
-  EXPECTED_ENCODED_BITS = bits = applyInterleaving(
-    applyErrorCorrection(bits)
+  EXPECTED_ENCODED_BITS = [];
+
+  const startSeconds = audioContext.currentTime + 0.1;
+  const startMilliseconds = startSeconds * 1000;
+
+  const packetCount = getPacketCount(bits);
+  const packetBitCount = getPacketBitCount();
+  const totalDurationSeconds = getDataTransferDurationSeconds(bits);
+  const totalDurationMilliseconds = getDataTransferDurationSeconds(bits);
+  const packetDurationSeconds = getPacketDurationSeconds();
+
+  sendButton.innerText = 'Stop';
+
+  createOscillators(startSeconds);
+  // send all packets
+  for(let i = 0; i < packetCount; i++) {
+    let packet = getPacketBits(bits, i);
+    if(packet.length > packetBitCount) {
+      console.error('cant send packet of %s bits with more than %s bits', packet.length, packetBitCount);
+      disconnectOscillators();
+      return;
+    }
+    packet = applyInterleaving(packet);
+    EXPECTED_ENCODED_BITS.push(...packet);
+    sendPacket(packet, startSeconds + (i * packetDurationSeconds));
+  }
+  stopOscillators(startSeconds + totalDurationSeconds);
+  stopTimeoutId = window.setTimeout(
+    disconnectOscillators,
+    startMilliseconds + totalDurationMilliseconds
   );
   document.getElementById('encoded-data').value = EXPECTED_ENCODED_BITS.reduce(bitReducer, '');
 
-  var audioContext = getAudioContext();
-  const channels = getChannels();
-  const oscillators = [];
-  const channelCount = channels.length;
-
-  const currentTime = audioContext.currentTime + 0.1;
-
-  const destination = SEND_VIA_SPEAKER ? audioContext.destination : getAnalyser();
-
-  // create our oscillators
-  for(let i = 0; i < channelCount; i++) {
-    var oscillator = audioContext.createOscillator();
-    
-    oscillator.connect(destination);
-    oscillator.type = WAVE_FORM;
-    oscillators.push(oscillator);
-  }
-
-  // change our channel frequencies for the bit
-  for(let i = 0; i < bits.length; i++) {
-    const isHigh = bits[i];
-    const channel = i % channelCount;
-    const segment = Math.floor(i / channelCount);
-    var offset = ((segment * SEGMENT_DURATION)/1000);
-    var offset2 = (((segment+1) * SEGMENT_DURATION)/1000) - (1/100000);
-    oscillators[channel].frequency.setValueAtTime(
-      channels[channel][isHigh ? 1 : 0],
-      currentTime + offset
-    );
-    oscillators[channel].frequency.setValueAtTime(
-      channels[channel][isHigh ? 1 : 0],
-      currentTime + offset2
-    );
-  }
-
-  // start sending our signal
-  oscillators.forEach(o => o.start(currentTime));
-
-  // silence oscillators when done
-  for(let i = bits.length; i < bits.length + channelCount; i++) {
-    const channel = i % channelCount;
-    const segment = Math.floor(i / channelCount);
-    const offset = ((segment * SEGMENT_DURATION) / 1000);
-    oscillators[channel].frequency.setValueAtTime(0, currentTime + offset);
-    oscillators[channel].stop(currentTime + offset);
-  }
-
   // start the graph moving again
   resumeGraph();
+}
+let stopTimeoutId;
+
+function getDataTransferDurationMilliseconds(bits) {
+  return getPacketCount(bits) * getPacketDurationMilliseconds();
+}
+function getDataTransferDurationSeconds(bits) {
+  return getDataTransferDurationMilliseconds(bits) / 1000;
+}
+function getPacketDurationMilliseconds() {
+  return getPacketSegmentCount() * SEGMENT_DURATION;
+}
+function getPacketDurationSeconds() {
+  return getPacketDurationMilliseconds() / 1000;
+}
+function getSegmentTransferDurationSeconds() {
+  return SEGMENT_DURATION / 1000;
+}
+function getPacketSegmentCount() {
+  return Math.ceil(getPacketBitCount() / getChannels().length);
+}
+function getPacketCount(bits) {
+  if(!canSendPacket()) return 0;
+
+  // How many data bits will be encoded in our packet?
+  let dataBitCount = getPacketDataBitCount();
+
+  // Return the total number of packets needed to send all data
+  return Math.ceil(bits.length / dataBitCount);
+}
+function getPacketBits(bits, packetIndex) {
+  if(!canSendPacket()) return [];
+  const packetBits = getPacketUsedBits(bits, packetIndex);  
+
+  // How many bits expected in our packet?
+  const packetBitCount = getPacketBitCount();
+
+  // pad the array to the entire packet size
+  return padArray(packetBits, packetBitCount, 0);
+}
+function getPacketUsedBits(bits, packetIndex) {
+  if(!canSendPacket()) return [];
+
+  // How many data bits will be in our packet?
+  const dataBitCount = getPacketDataBitCount();
+
+  // grab our data
+  const startIndex = packetIndex * dataBitCount;
+  const endIndex = startIndex + dataBitCount;
+  let packetBits = bits.slice(startIndex, endIndex);
+
+  // Are we using error correction?
+  if(HAMMING_ERROR_CORRECTION) {
+    // encode data bits
+    packetBits = applyErrorCorrection(packetBits);
+  }
+  return packetBits;
+}
+function getPacketErrorBlockCount() {
+  const bitCount = getPacketBitCount();
+  // No error correction?
+  if(!HAMMING_ERROR_CORRECTION) {
+    // No error blocks
+    return 0;
+  }
+  // How many error blocks can be in a packet?
+  return Math.floor(
+    bitCount / 
+    ERROR_CORRECTION_BLOCK_SIZE
+  );
+}
+function getPacketByteCount() {
+  // Convert packet size as power of 2
+  return 2 ** PACKET_SIZE_BITS;
+}
+function getPacketBitCount() {
+  // 8 bits per byte
+  return getPacketByteCount() * 8;
+}
+function canSendPacket() {
+  const max = getPacketBitCount();
+  // Need at least 1 bit to send
+  if(max < 1) return false;
+  // Has error correction?
+  if(HAMMING_ERROR_CORRECTION) {
+    // Need enough bits to fit one or more blocks
+    return max >= ERROR_CORRECTION_BLOCK_SIZE;
+  }
+  // 1 or more is great without encoding
+  return true;
+}
+function getPacketLastSegmentUnusedChannelCount() {
+  const channelCount = getChannels().length;
+  return (channelCount - (getPacketBitCount() % channelCount));
+}
+function getPacketUnusedBitCount() {
+  return getPacketBitCount() - getPacketDataBitCount();
+}
+function getPacketLastUnusedBitCount(bits) {
+  const packetCount = getPacketCount(bits);
+  const availableBits = getPacketBitCount();
+  const usedBits = getPacketUsedBits(bits, packetCount-1).length;
+  return availableBits - usedBits;
+}
+function getPacketDataBitCount() {
+  const bitCount = getPacketBitCount();
+  // No error correction?
+  if(!HAMMING_ERROR_CORRECTION) {
+    // Return all bits available
+    return bitCount;
+  }
+  return getPacketErrorBlockCount() * ERROR_CORRECTION_DATA_SIZE;
+}
+function padArray(values, length, value) {
+  while(values.length < length) values.push(value);
+  return values;
+}
+
+const CHANNEL_OSCILLATORS = [];
+function getOscillators() {
+  return CHANNEL_OSCILLATORS;
+}
+function createOscillators(streamStartSeconds) {
+  console.log('create oscillators', streamStartSeconds);
+  const oscillators = getOscillators();
+  if(oscillators.length !== 0) disconnectOscillators();
+  var audioContext = getAudioContext();
+  const channels = getChannels();
+  const channelCount = channels.length;
+  const destination = SEND_VIA_SPEAKER ? audioContext.destination : getAnalyser();
+  // create our oscillators
+  for(let i = 0; i < channelCount; i++) {
+    const oscillator = audioContext.createOscillator();
+    oscillator.connect(destination);
+    oscillator.type = WAVE_FORM;
+    oscillator.start(streamStartSeconds);
+    oscillators.push(oscillator);
+  }
+  return oscillators;
+}
+function disconnectOscillators() {
+  console.log('disconnect oscillators');
+  stopOscillators(getAudioContext().currentTime);
+  const oscillators = getOscillators();
+  oscillators.forEach(
+    oscillator => oscillator.disconnect()
+  )
+  oscillators.length = 0;
+  sendButton.innerText = 'Send';
+  stopTimeoutId = undefined;
+}
+function stopOscillators(streamEndSeconds) {
+  console.log('stop oscillators', streamEndSeconds);
+  const channels = getChannels();
+  const oscillators = getOscillators();
+  const channelCount = channels.length;
+  // silence oscillators when done
+  for(let channel = 0; channel < channelCount; channel++) {
+    const oscillator = oscillators[channel];
+    oscillator?.stop(streamEndSeconds);
+  }
+}
+function sendPacket(bits, packetStartSeconds) {
+  console.log('packet start', packetStartSeconds);
+  const channels = getChannels();
+  const oscillators = getOscillators();
+  const channelCount = channels.length;
+  let bitCount = bits.length;
+  const lastChannel = bits.length % channelCount;
+  if(lastChannel !== channelCount - 1) {
+    // make sure all channels are set for the last segment
+    bitCount += (channelCount - lastChannel)
+  }
+
+  const segmentDurationSeconds = getSegmentTransferDurationSeconds();
+  // change our channel frequencies for the bit
+  for(let i = 0; i < bitCount; i++) {
+    // missing bits past end of bit stream set to zero
+    const isHigh = bits[i] ?? 0;
+
+    const channel = i % channelCount;
+
+    // already at correct frequency
+    if(oscillators[channel].on === isHigh) continue;
+    oscillators[channel].on = isHigh;
+    const segmentIndex = Math.floor(i / channelCount);
+    var offsetSeconds = segmentIndex * segmentDurationSeconds;
+    oscillators[channel].frequency.setValueAtTime(
+      channels[channel][isHigh ? 1 : 0],
+      packetStartSeconds + offsetSeconds
+    );
+  }
 }
 function stopGraph() {
   PAUSE = true;
@@ -806,6 +998,10 @@ function textToBits(text) {
   return bits.join('').split('').map(Number);
 }
 function handleSendButtonClick() {
+  if(stopTimeoutId) {
+    disconnectOscillators();
+    return;
+  }
   receivedDataTextarea.value = '';
   sentDataTextArea.value = '';
 
@@ -1080,36 +1276,11 @@ function getTimePercent(time, newest) {
   if(newest - time > duration) return -1;
   return ((newest - time) / duration);
 }
-function getDataBitCount() {
-  const text = document.getElementById('text-to-send').value;
-  const dataByteCount = text.length;
-  return dataByteCount * 8;
-}
-function getPacketSizeUnencodedBitCount() {
-  return getDataBitCount();
-}
-function getErrorCorrectionBlocks() {
-  if(!HAMMING_ERROR_CORRECTION) return 0;
-  const dataBitCount = getPacketSizeUnencodedBitCount();
-  return Math.ceil(dataBitCount / 4);
-}
-function getErrorCorrectionBitCount() {
-  return getErrorCorrectionBlocks() * 3;
-}
-function getPacketSizeEncodedBitCount() {
-  return getErrorCorrectionBitCount() + getPacketSizeUnencodedBitCount();
-}
-function getPacketSizeEncodedByteCount() {
-  return Math.ceil(getPacketSizeEncodedBitCount() / 8);
-}
+
 function getPacketSizeSegmentCount() {
-  const totalBits = getPacketSizeEncodedBitCount();
+  const totalBits = getPacketBitCount();
   const channelCount = getChannels().length;
   return Math.ceil(totalBits / channelCount);
-}
-function getPacketDurationMilliseconds() {
-  const segmentCount = getPacketSizeSegmentCount();
-  return segmentCount * SEGMENT_DURATION;
 }
 function drawChannelData() {
   // Do/did we have a stream?
@@ -1118,7 +1289,7 @@ function drawChannelData() {
   const latest = frequencyOverTime[0].time;
 
   // will any of the stream appear?
-  const packetBitCount = getPacketSizeEncodedBitCount();
+  const packetBitCount = getPacketBitCount();
 
   const packetDuration = getPacketDurationMilliseconds();
   const lastStreamEnded = LAST_STREAM_STARTED + packetDuration;
