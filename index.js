@@ -1509,10 +1509,10 @@ function numberToBits(number, bitLength) {
   return bits;
 }
 function bytesToText(bytes) {
-  return new TextDecoder(encoding).decode(bytes);
+  return new TextDecoder().decode(bytes);
 }
 function textToBytes(text) {
-  return new TextEncoder(encoding).encode(text);
+  return new TextEncoder().encode(text);
 }
 function bytesToBits(bytes) {
   return bytes.reduce((bits, byte) => [
