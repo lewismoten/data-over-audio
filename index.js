@@ -84,10 +84,6 @@ var PAUSE = false;
 var PAUSE_AFTER_END = true;
 var PACKET_SIZE_BITS = 5; // 32 bytes, 256 bits
 
-var EXPECTED_ENCODED_BITS = [];
-var EXPECTED_BITS = [];
-var EXPECTED_TEXT = '';
-
 const packetReceivedBits = [];
 const packetUninterlievedBits = [];
 const packetDecodedBits = [];
@@ -1542,7 +1538,6 @@ function handleSendButtonClick() {
   resetReceivedData();
 
   const text = document.getElementById('text-to-send').value;
-  EXPECTED_TEXT = text;
   sendBytes(textToBytes(text));
 }
 function getAnalyser() {
@@ -1879,8 +1874,8 @@ function drawChannelData() {
       const receivedBit = segmentBits[channelIndex];
       // identify expected bit
       const bitIndex = channelIndex + (segmentIndex * channelCount);
-      if(bitIndex >= EXPECTED_ENCODED_BITS.length) break;
-      const expectedBit = EXPECTED_ENCODED_BITS[bitIndex];
+      if(bitIndex >= SENT_ENCODED_BITS.length) break;
+      const expectedBit = SENT_ENCODED_BITS[bitIndex];
 
       drawChannelSegmentBackground(
         ctx,
@@ -2220,7 +2215,7 @@ function handleReceivedChannelGraphClick(e) {
         }
       });
 
-      const expectedBit = EXPECTED_ENCODED_BITS[bitIndex];
+      const expectedBit = SENT_ENCODED_BITS[bitIndex];
       const receivedBit = packetReceivedBits[bitIndex];
       addLowHigh('Expected Bit', expectedBit === 1 ? '' : '0', expectedBit === 1 ? '1' : '')
       addLowHigh('Received Bit', receivedBit === 1 ? '' : '0', receivedBit === 1 ? '1' : '')
