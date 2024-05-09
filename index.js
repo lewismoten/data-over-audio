@@ -1874,8 +1874,8 @@ function drawChannelData() {
       const receivedBit = segmentBits[channelIndex];
       // identify expected bit
       const bitIndex = channelIndex + (segmentIndex * channelCount);
-      if(bitIndex >= SENT_ENCODED_BITS.length) break;
-      const expectedBit = SENT_ENCODED_BITS[bitIndex];
+      if(bitIndex >= SENT_TRANSFER_BITS.length) break;
+      const expectedBit = SENT_TRANSFER_BITS[bitIndex];
 
       drawChannelSegmentBackground(
         ctx,
@@ -2215,7 +2215,7 @@ function handleReceivedChannelGraphClick(e) {
         }
       });
 
-      const expectedBit = SENT_ENCODED_BITS[bitIndex];
+      const expectedBit = SENT_TRANSFER_BITS[bitIndex];
       const receivedBit = packetReceivedBits[bitIndex];
       addLowHigh('Expected Bit', expectedBit === 1 ? '' : '0', expectedBit === 1 ? '1' : '')
       addLowHigh('Received Bit', receivedBit === 1 ? '' : '0', receivedBit === 1 ? '1' : '')
