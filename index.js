@@ -92,10 +92,37 @@ const packetReceivedBits = [];
 const packetUninterlievedBits = [];
 const packetDecodedBits = [];
 let packetDataByteCount = -1;
+const EMOJI_CHARS = [
+  "\u{1F600}", "\u{1F601}", "\u{1F602}", "\u{1F923}", "\u{1F603}", "\u{1F604}", "\u{1F605}", "\u{1F606}",
+  "\u{1F609}", "\u{1F60A}", "\u{1F60B}", "\u{1F60E}", "\u{1F60D}", "\u{1F618}", "\u{1F617}", "\u{1F619}",
+  "\u{1F61A}", "\u{1F61B}", "\u{263A}", "\u{1F642}", "\u{1F60F}", "\u{1F60C}", "\u{1F61C}", "\u{1F61D}",
+  "\u{1F61E}", "\u{1F61F}", "\u{1F612}", "\u{1F613}", "\u{1F614}", "\u{1F615}", "\u{1F643}", "\u{1F610}",
+  "\u{1F611}", "\u{1F636}", "\u{1F607}", "\u{1F60F}", "\u{1F623}", "\u{1F625}", "\u{1F62E}", "\u{1F62F}",
+  "\u{1F62A}", "\u{1F62B}", "\u{1F634}", "\u{1F60D}", "\u{1F615}", "\u{1F625}", "\u{1F622}", "\u{1F62D}",
+  "\u{1F631}", "\u{1F616}", "\u{1F623}", "\u{1F624}", "\u{1F630}", "\u{1F621}", "\u{1F620}", "\u{1F637}",
+  "\u{1F912}", "\u{1F915}", "\u{1F922}", "\u{1F92A}", "\u{1F605}", "\u{1F624}", "\u{1F62C}", "\u{1F687}",
+  "\u{1F636}", "\u{1F610}", "\u{1F611}", "\u{1F974}", "\u{1F612}", "\u{1F644}", "\u{1F913}", "\u{1F615}",
+  "\u{1F62C}", "\u{1F636}", "\u{1F922}", "\u{1F927}", "\u{1F974}", "\u{1F975}", "\u{1F976}", "\u{1F92E}",
+  "\u{1F927}", "\u{1F976}", "\u{1F925}", "\u{1F92F}", "\u{1F975}", "\u{1F976}", "\u{1F92E}", "\u{1F925}",
+  "\u{1F924}", "\u{1F631}", "\u{1F634}", "\u{1F62C}", "\u{1F91E}", "\u{1F621}", "\u{1F608}", "\u{1F47F}",
+  "\u{1F480}", "\u{1F47B}", "\u{1F47D}", "\u{1F916}", "\u{1F608}", "\u{1F47A}", "\u{1F479}", "\u{1F47C}",
+  "\u{1F47E}", "\u{1F916}", "\u{1F4A9}", "\u{1F608}", "\u{1F4A4}", "\u{1F525}", "\u{1F4A3}", "\u{1F52E}",
+  "\u{1F4A2}", "\u{1F4A1}", "\u{1F6A8}", "\u{1F3B6}", "\u{1F519}", "\u{1F5E8}", "\u{1F4F3}", "\u{1F4F1}",
+  "\u{1F4F2}", "\u{1F514}", "\u{1F3A4}", "\u{1F4F9}", "\u{1F4F7}", "\u{1F4F8}", "\u{1F4F4}", "\u{1F4F6}",
+  "\u{1F3AF}", "\u{1F4FD}", "\u{1F4FC}", "\u{1F4E5}",
+];
+const PRINTABLE_CHARS = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890`-=~!@#$%^&*()_+[]\\{}|;':\",./<>?".split('');
+PRINTABLE_CHARS.push(...EMOJI_CHARS);
 
+function randomCharacter() {
+  const index = Math.floor(Math.random() * PRINTABLE_CHARS.length);
+  return PRINTABLE_CHARS[index];
+}
 function handleWindowLoad() {
-  const printable = "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890`-=~!@#$%^&*()_+[]\\{}|;':\",./<>?";
-  TEXT_TO_SEND = new Array(RANDOM_COUNT).fill(0).map(() => printable[Math.floor(Math.random() * printable.length)]).join('');
+  TEXT_TO_SEND = new Array(RANDOM_COUNT)
+    .fill(0)
+    .map(randomCharacter).join('');
+    console.log('text', TEXT_TO_SEND);
 
   // grab dom elements
   sendButton = document.getElementById('send-button');
@@ -1235,7 +1262,9 @@ function updateReceivedData() {
   document.getElementById('received-decoded-bits-error-percent').innerText = (
     Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
-  document.getElementById('decoded-text').innerHTML = allDecodedBits.reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '');
+  // ArrayBuffer / ArrayBufferView
+  const receivedText = bitsToText(allDecodedBits);
+  document.getElementById('decoded-text').innerHTML = receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '');
 }
 function asHex(length) {
   return (number) => number.toString(16).padStart(length, '0').toUpperCase();
@@ -1363,29 +1392,21 @@ const bitExpectorReducer = (expected, packetBitSize, blockSize, blockCallback) =
   }
   return all;
 }
-const textExpectorReducer = expected => (all, bit, i, bits) => {
-  // if(i < PACKET_SIZE_BITS) return all;
-  if(i % 8 === 0) {
-    const bitString = bits.slice(
-      i, 
-      i + 8
-    ).join('').padEnd(8, '0');
-    const ascii = parseInt(bitString, 2);
-    const char = String.fromCharCode(ascii);
-    const charIndex = Math.floor(i / 8);
-    const html = htmlEncode(printable(char));
-    if(i >= expected.length * 8) {
+const textExpectorReducer = expected => {
+
+  const expectedChars = expected.split('');
+  
+  return (all, char, i) => {
+    const html = htmlEncode(char);
+    if(i >= expected.length) {
       all += '<span class="bit-unexpected">' + html + '</span>';
-    } else if(char !== expected[charIndex]) {
+    } else if(char !== expectedChars[i]) {
       all += '<span class="bit-wrong">' + html + '</span>';
     } else {
       all += html;
     }
-  }
-  return all;
-}
-function printable(text) {
-  return text.replace(/[\x00-\x1f\x7f-\x9f]/g, '.');
+    return all;
+  };
 }
 function htmlEncode(text) {
   const element = document.createElement('div');
@@ -1466,7 +1487,8 @@ function textToBits(text) {
   return bytesToBits(textToBytes(text));
 }
 function bitsToText(bits) {
-  return bytesToText(bitsToBytes(bits));
+  const bytes = new Uint8Array(bitsToBytes(bits));
+  return bytesToText(bytes.buffer);
 }
 function handleSendButtonClick() {
   if(stopOscillatorsTimeoutId) {
