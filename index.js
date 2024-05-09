@@ -12,6 +12,7 @@ var receivedGraph;
 var receivedData = [];
 var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
 const MAXIMUM_PACKETIZATION_SIZE_BITS = 16;
+const CRC_BIT_COUNT = 8;
 
 // bits after error correction is applied
 let RECEIVED_STREAM_DECODED_BITS = [];
@@ -391,6 +392,14 @@ function calcCrc(
   }
   return crc;
 }
+function crc(bytes, bitCount) {
+  switch(bitCount) {
+    case 8: return crc8(bytes);
+    case 16: return crc16(bytes);
+    case 32: return crc32(bytes);
+    default: return 0;
+  }
+}
 function crc8(bytes) { return calcCrc(bytes, 8, 0x07); }
 function crc16(bytes) { 
   return calcCrc(
@@ -598,6 +607,7 @@ function logSent(text) {
   sentDataTextArea.value += text + '\n';
   sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
 }
+
 function sendBytes(bytes) {
   const byteCount = bytes.length;
   if(byteCount === 0) {
@@ -616,7 +626,13 @@ function sendBytes(bytes) {
 
   // packetization headers
   // data length
-  bits.unshift(...intToBits(bytes.length, MAXIMUM_PACKETIZATION_SIZE_BITS));
+  const dataLengthBits = numberToBits(bytes.length, MAXIMUM_PACKETIZATION_SIZE_BITS);
+  // crc on data length
+  const dataLengthCrcBits = numberToBits(crc(bitsToBytes(dataLengthBits), CRC_BIT_COUNT), CRC_BIT_COUNT);
+
+  // prefix with headers
+  bits.unshift(...dataLengthBits, ...dataLengthCrcBits);
+
   const bitCount = bits.length;
 
   SENT_TRANSFER_BITS.length = 0;
@@ -725,7 +741,7 @@ function getPacketByteCount() {
   return 2 ** PACKET_SIZE_BITS;
 }
 function getPacketizationBitCount(bitCount) {
-  return bitCount + MAXIMUM_PACKETIZATION_SIZE_BITS;
+  return bitCount + MAXIMUM_PACKETIZATION_SIZE_BITS + CRC_BIT_COUNT;
 }
 function getPacketBitCount() {
   return getPacketByteCount() * 8;
@@ -1141,6 +1157,19 @@ function updateReceivedData() {
     ...RECEIVED_PACKET_DECODED_BITS
   ]
 
+  // get packet data before removing decoded bits
+  const transmissionByteCount = parseTransmissionByteCount(allDecodedBits);
+  const transmissionByteCountCrc = parseTransmissionByteCountCrc(allDecodedBits)
+  const transmissionByteCountActualCrc = crc(
+    bitsToBytes(
+      numberToBits(
+        transmissionByteCount,
+        MAXIMUM_PACKETIZATION_SIZE_BITS
+      )
+    ), CRC_BIT_COUNT
+  );
+  const trustedLength = transmissionByteCountCrc === transmissionByteCountActualCrc;
+
   // reduce all decoded bits based on original data sent
   allDecodedBits = removeDecodedHeadersAndPadding(allDecodedBits);
 
@@ -1184,6 +1213,13 @@ function updateReceivedData() {
         HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_DATA_SIZE : 8
       ),
     '');
+  document.getElementById('received-packet-original-bytes').innerText = transmissionByteCount.toLocaleString();
+  const packetCrc = document.getElementById('received-packet-original-bytes-crc');
+  packetCrc.innerText = '0x' + asHex(2)(transmissionByteCountCrc);
+  packetCrc.className = trustedLength ? 'bit-correct' : 'bit-wrong';
+  if(!trustedLength) {
+    packetCrc.innerText += ' (Expected 0x' + asHex(2)(transmissionByteCountActualCrc) + ')';
+  }
 
   document.getElementById('received-encoded-bits-error-percent').innerText = (
     Math.floor((1 - (correctEncodedBits / allEncodedBits.length)) * 10000) * 0.01
@@ -1195,6 +1231,18 @@ function updateReceivedData() {
     Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
   document.getElementById('decoded-text').innerHTML = allDecodedBits.reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '');
+}
+function asHex(length) {
+  return (number) => number.toString(16).padStart(length, '0').toUpperCase();
+}
+function parseTransmissionByteCountCrc(bits) {
+  const offset = MAXIMUM_PACKETIZATION_SIZE_BITS;
+  bits = bits.slice(offset, offset+8);
+  return bitsToInt(bits, 8);
+}
+function parseTransmissionByteCount(bits) {
+  bits = bits.slice(0, MAXIMUM_PACKETIZATION_SIZE_BITS);
+  return bitsToInt(bits, MAXIMUM_PACKETIZATION_SIZE_BITS);
 }
 function removeEncodedPadding(bits) {
   const sizeBits = MAXIMUM_PACKETIZATION_SIZE_BITS;
@@ -1212,14 +1260,17 @@ function removeEncodedPadding(bits) {
     return bits;
   }
 
-  // get bits representing the size
+  // get header bits representing the size
   let dataSizeBits = [];
+  let headerBitCount = MAXIMUM_PACKETIZATION_SIZE_BITS + CRC_BIT_COUNT;
+
   if(HAMMING_ERROR_CORRECTION) {
     for(i = 0; i < blocksNeeded; i++) {
       const block = bits.slice(i * blockSize, (i + 1) * blockSize);
       dataSizeBits.push(...hammingToNibble(block));
     }
     dataSizeBits.length = sizeBits;
+    headerBitCount = Math.ceil(headerBitCount / ERROR_CORRECTION_DATA_SIZE) * ERROR_CORRECTION_BLOCK_SIZE;
   } else {
     dataSizeBits = bits.slice(0, sizeBits);
   }
@@ -1227,7 +1278,7 @@ function removeEncodedPadding(bits) {
   const dataByteCount = bitsToInt(dataSizeBits, sizeBits);
 
   // determine how many decoded bits need to be sent (including the size)
-  const totalBits = (dataByteCount * 8) + sizeBits;
+  const totalBits = (dataByteCount * 8) + MAXIMUM_PACKETIZATION_SIZE_BITS + CRC_BIT_COUNT;
   let encodingBitCount = totalBits;
   if(HAMMING_ERROR_CORRECTION) {
     const blocks = Math.ceil(encodingBitCount / dataSize);
@@ -1248,8 +1299,9 @@ function removeDecodedHeadersAndPadding(bits) {
   if(bits.length >= sizeBits) {
     bitCount = bitsToInt(bits.slice(0, sizeBits), sizeBits);
   }
-  // remove size header
-  bits.splice(0, sizeBits);
+  // remove size and crc header
+  bits.splice(0, sizeBits + CRC_BIT_COUNT);
+
   // remove excessive bits
   bits.splice(bitCount * 8);
   return bits;
@@ -1361,20 +1413,19 @@ function bitsToInt(bits, bitLength) {
   // parse as int
   return parseInt(bitString, 2);
 }
-function intToBits(int, bitLength) {
-  // max number for bit length
-  const max = Math.pow(2, bitLength) - 1;
-  // overflow numbers too high
-  const value = (int & max);
-  return value
-    // convert to bit string
-    .toString(2)
-    // prefix with zeros to fill bit length
-    .padStart(bitLength, '0')
-    // convert to array
-    .split('')
-    // convert strings to numbers
-    .map(Number);
+function intToBytes(int, bitLength) {
+  const byteCount = Math.ceil(bitLength/8);
+  const bytes = [];
+  for(let i = 0; i < byteCount; i++) {
+    bytes.push((int >> (8 * (byteCount - 1 - i))) & 0xFF);
+  }
+  return bytes;
+}
+function numberToBits(number, bitLength) {
+  const bits = [];
+  for(let i = bitLength - 1; i >= 0; i--)
+    bits.push((number >> i) & 1);
+  return bits;
 }
 function bytesToText(bytes, encoding='utf-8') {
   return new TextDecoder(encoding).decode(bytes);
