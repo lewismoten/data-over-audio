@@ -1508,10 +1508,10 @@ function numberToBits(number, bitLength) {
     bits.push((number >> i) & 1);
   return bits;
 }
-function bytesToText(bytes, encoding='utf-8') {
+function bytesToText(bytes) {
   return new TextDecoder(encoding).decode(bytes);
 }
-function textToBytes(text, encoding='utf-8') {
+function textToBytes(text) {
   return new TextEncoder(encoding).encode(text);
 }
 function bytesToBits(bytes) {
