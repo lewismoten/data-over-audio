@@ -21,6 +21,29 @@ body {
 canvas {
   background-color: black;
 }
+.progress-container {
+  width: 100%;
+  height: 20px;
+  border: 1px solid black;
+  background-color: darkslategray;
+}
+.progress-bar {
+  height: 100%;
+  min-height: 14px;
+  background-color: yellow;
+  position: relative;
+  z-index: 2;
+  left: 0;
+  /* transition: width 0.3s ease; */
+}
+.xprogress-container::after {
+  content: attr(data-percent) '%';
+  position: relative;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
 .raw-data {
   background-color: rgb(41, 59, 10);
   color: rgb(75, 185, 75);

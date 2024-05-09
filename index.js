@@ -1169,6 +1169,7 @@ function updateReceivedData() {
     ), CRC_BIT_COUNT
   );
   const trustedLength = transmissionByteCountCrc === transmissionByteCountActualCrc;
+  const totalBitsTransferring = parseTotalBitsTransferring(allDecodedBits);
 
   // reduce all decoded bits based on original data sent
   allDecodedBits = removeDecodedHeadersAndPadding(allDecodedBits);
@@ -1183,6 +1184,10 @@ function updateReceivedData() {
   const correctRawBits = allRawBits.filter((b, i) => i < rawBitCount && b === SENT_TRANSFER_BITS[i]).length;
   const correctEncodedBits = allEncodedBits.filter((b, i) => i < encodedBitCount && b === SENT_ENCODED_BITS[i]).length;
   const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === SENT_ORIGINAL_BITS[i]).length;
+
+  const receivedProgess = document.getElementById('received-progress');
+  let percentReceived = allRawBits.length / totalBitsTransferring;
+  receivedProgess.style.width = `${Math.floor(Math.min(1, percentReceived) * 100)}%`;
 
   document.getElementById('received-raw-bits').innerHTML = allRawBits
     .reduce(
@@ -1235,14 +1240,25 @@ function updateReceivedData() {
 function asHex(length) {
   return (number) => number.toString(16).padStart(length, '0').toUpperCase();
 }
-function parseTransmissionByteCountCrc(bits) {
-  const offset = MAXIMUM_PACKETIZATION_SIZE_BITS;
-  bits = bits.slice(offset, offset+8);
-  return bitsToInt(bits, 8);
+function parseTotalBitsTransferring(decodedBits) {
+  const dataByteCount = parseTransmissionByteCount(decodedBits);
+  const bitCount = getPacketizationBitCount(dataByteCount * 8);
+  const segments = getTotalSegmentCount(bitCount);
+  return segments * getChannels().length;
 }
-function parseTransmissionByteCount(bits) {
-  bits = bits.slice(0, MAXIMUM_PACKETIZATION_SIZE_BITS);
-  return bitsToInt(bits, MAXIMUM_PACKETIZATION_SIZE_BITS);
+function parseTransmissionByteCountCrc(decodedBits) {
+  const offset = MAXIMUM_PACKETIZATION_SIZE_BITS;
+  decodedBits = decodedBits.slice(offset, offset + CRC_BIT_COUNT);
+  return bitsToInt(decodedBits, CRC_BIT_COUNT);
+}
+function parseTransmissionByteCount(decodedBits) {
+  decodedBits = decodedBits.slice(0, MAXIMUM_PACKETIZATION_SIZE_BITS);
+  while(decodedBits.length < MAXIMUM_PACKETIZATION_SIZE_BITS) {
+    // assume maximum value possible
+    // until we have enough bits to find the real size
+    decodedBits.push(1);
+  }
+  return bitsToInt(decodedBits, MAXIMUM_PACKETIZATION_SIZE_BITS);
 }
 function removeEncodedPadding(bits) {
   const sizeBits = MAXIMUM_PACKETIZATION_SIZE_BITS;
