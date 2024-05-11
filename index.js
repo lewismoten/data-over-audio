@@ -7,11 +7,10 @@ import * as Randomizer from './Randomizer';
 import * as AudioSender from './AudioSender';
 import * as AudioReceiver from './AudioReceiver';
 import * as CRC from './CRC.js';
+import CommunicationsPanel from './Panels/CommunicationsPanel';
+import MessagePanel from "./Panels/MessagePanel.js";
 
 var audioContext;
-var sendButton;
-var textToSend;
-var isListeningCheckbox;
 var microphoneStream;
 var microphoneNode;
 var analyser;
@@ -23,21 +22,14 @@ var MAX_AMPLITUDE = 300; // Higher than 255 to give us space
 const MAXIMUM_PACKETIZATION_SIZE_BITS = 16;
 const CRC_BIT_COUNT = 8;
 
-// bits as they arrived
-let RECEIVED_SEGMENT_BITS = []; // RECEIVED_SEGMENT_BITS[packetIndex][segmentIndex][channel] = bit
-
 // bits as they are sent
 let SENT_ORIGINAL_TEXT = '';
 let SENT_ORIGINAL_BITS = []; // original bits
 let SENT_ENCODED_BITS = []; // bits with error encoding
 let SENT_TRANSFER_BITS = []; // bits sent in the transfer
 
-// interval and timeout ids
-let stopOscillatorsTimeoutId;
-
 let EXCLUDED_CHANNELS = [];
 
-var TEXT_TO_SEND = "U";
 var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
 var SEGMENT_DURATION = 30;
 var AMPLITUDE_THRESHOLD_PERCENT = .75;
@@ -69,12 +61,36 @@ var PAUSE = false;
 var PAUSE_AFTER_END = true;
 var PACKET_SIZE_BITS = 5; // 32 bytes, 256 bits
 
+const communicationsPanel = new CommunicationsPanel();
+const messagePanel = new MessagePanel();
+
 function handleWindowLoad() {
-  TEXT_TO_SEND = Randomizer.text(5);
+  const panelContainer = document.getElementById('panel-container');
+  panelContainer.prepend(messagePanel.getDomElement());
+  panelContainer.prepend(communicationsPanel.getDomElement());
+
+  // Initialize Values
+  communicationsPanel.setListening(false);
+  communicationsPanel.setSendSpeakers(false);
+  communicationsPanel.setSendAnalyzer(true);
+
+  messagePanel.setMessage(Randomizer.text(5));
+  messagePanel.setProgress(0);
+  messagePanel.setReceived('');
+  messagePanel.setSendButtonText('Send');
+
+  // Communications Events
+  communicationsPanel.addEventListener('listeningChange', handleChangeListening);
+  communicationsPanel.addEventListener('sendSpeakersChange', handleChangeSendSpeakers);
+  communicationsPanel.addEventListener('sendAnalyzerChange', handleChangeSendAnalyzer);
+
+  messagePanel.addEventListener('messageChange', configurationChanged);
+  messagePanel.addEventListener('send', handleSendButtonClick);
+
   // Setup audio sender
-  AudioSender.addEventListener('begin', () => sendButton.innerText = 'Stop');
+  AudioSender.addEventListener('begin', () => messagePanel.setSendButtonText('Stop'));
   AudioSender.addEventListener('send', handleAudioSenderSend);
-  AudioSender.addEventListener('end', () => sendButton.innerText = 'Send');
+  AudioSender.addEventListener('end', () => messagePanel.setSendButtonText('Send'));
   // Setup audio receiver
   AudioReceiver.addEventListener('begin', handleAudioReceiverStart);
   AudioReceiver.addEventListener('receive', handleAudioReceiverReceive);
@@ -83,12 +99,8 @@ function handleWindowLoad() {
   StreamManager.addEventListener('change', handleStreamManagerChange);
 
   // grab dom elements
-  sendButton = document.getElementById('send-button');
-  isListeningCheckbox = document.getElementById('is-listening-checkbox');
   receivedDataTextarea = document.getElementById('received-data');
   receivedGraph = document.getElementById('received-graph');
-  textToSend = document.getElementById('text-to-send');
-  textToSend.value = TEXT_TO_SEND;
   sentDataTextArea = document.getElementById('sent-data');
   const receivedChannelGraph = document.getElementById('received-channel-graph');
   receivedChannelGraph.addEventListener('mouseover', handleReceivedChannelGraphMouseover);
@@ -124,11 +136,6 @@ function handleWindowLoad() {
   document.getElementById('pause-after-end').addEventListener('change', event => {
     PAUSE_AFTER_END = event.target.checked;
     if(!PAUSE_AFTER_END) resumeGraph();
-  })
-  document.getElementById('send-via-speaker').checked = SEND_VIA_SPEAKER;
-  document.getElementById('send-via-speaker').addEventListener('input', event => {
-    SEND_VIA_SPEAKER = event.target.checked;
-    configurationChanged();
   })
   document.getElementById('frequency-resolution-multiplier').value = FREQUENCY_RESOLUTION_MULTIPLIER;
   document.getElementById('frequency-resolution-multiplier').addEventListener('input', event => {
@@ -185,9 +192,6 @@ function handleWindowLoad() {
   });
   document.getElementById('audio-context-sample-rate').innerText = getAudioContext().sampleRate.toLocaleString();
   // wire up events
-  sendButton.addEventListener('click', handleSendButtonClick);
-  isListeningCheckbox.addEventListener('click', handleListeningCheckbox);
-  textToSend.addEventListener('input', configurationChanged);
   configurationChanged();
 }
 
@@ -313,7 +317,7 @@ function updatePacketUtils() {
   });
 }
 function updatePacketStats() {
-  const text = textToSend.value;
+  const text = messagePanel.getMessage();
   const bits = textToBits(text);
   const byteCount = text.length;
   const bitCount = PacketUtils.getPacketizationBitCountFromBitCount(bits.length);;
@@ -553,7 +557,7 @@ function stopGraph() {
 }
 
 function resumeGraph() {
-  if(isListeningCheckbox.checked) {
+  if(communicationsPanel.isListeningChecked()) {
     if(PAUSE) {
       PAUSE = false;
       AudioReceiver.start();
@@ -873,12 +877,12 @@ function bitsToText(bits) {
   return bytesToText(bytes.buffer);
 }
 function handleSendButtonClick() {
-  if(sendButton.innerText === 'Stop') {
+  if(messagePanel.getSendButtonText() === 'Stop') {
     AudioSender.stop();
   } else {
     AudioReceiver.reset();
     StreamManager.reset();
-    const text = document.getElementById('text-to-send').value;
+    const text = messagePanel.getMessage();
     sendBytes(textToBytes(text));
   }
 }
@@ -889,7 +893,15 @@ function getAnalyser() {
   analyser.fftSize = 2 ** FFT_SIZE_POWER;
   return analyser;
 }
-function handleListeningCheckbox(e) {
+function handleChangeSendAnalyzer({checked}) {
+  SEND_VIA_SPEAKER = !checked;
+  configurationChanged();
+}
+function handleChangeSendSpeakers({checked}) {
+  SEND_VIA_SPEAKER = checked;
+  configurationChanged();
+}
+function handleChangeListening({checked}) {
   stopGraph();
   var audioContext = getAudioContext();
   function handleMicrophoneOn(stream) {
@@ -902,7 +914,7 @@ function handleListeningCheckbox(e) {
   function handleMicrophoneError(error) {
     console.error('Microphone Error', error);
   }
-  if(e.target.checked) {
+  if(checked) {
     navigator.mediaDevices
       .getUserMedia({
         audio: {

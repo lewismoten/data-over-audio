@@ -5,11 +5,10 @@ const dispatcher = new Dispatcher('AudioSender', ['begin', 'end', 'send']);
 let audioContext;
 let CHANNELS = [];
 let DESTINATION;
-let ON_START;
-let ON_STOP;
-let ON_SEND;
 let CHANNEL_OSCILLATORS = [];
 let WAVE_FORM;
+
+let futureEventIds = [];
 
 let stopOscillatorsTimeoutId;
 
@@ -19,16 +18,10 @@ export const removeEventListener = dispatcher.removeListener;
 export const changeConfiguration = ({
   channels,
   destination,
-  startCallback,
-  stopCallback,
-  sendCallback,
   waveForm
 }) => {
   CHANNELS = channels;
   DESTINATION = destination;
-  ON_START = startCallback;
-  ON_STOP = stopCallback;
-  ON_SEND = sendCallback;
   WAVE_FORM = waveForm;
 }
 
@@ -85,7 +78,21 @@ export function send(bits, startSeconds) {
     const hz = channel[isHigh ? 1 : 0];
     oscillator.frequency.setValueAtTime(hz, startSeconds);
   });
-  dispatcher.emit('send', {bits: sentBits, startSeconds});
+
+  // Alghough we program an oscillator of when frequencies
+  // should change, let's not emit that the data is sent
+  // until the frequency actually changes in real-time
+  futureEventIds.push(window.setTimeout(
+    () => {
+      dispatcher.emit('send', {bits: sentBits, startSeconds});
+    }, delayMs(startSeconds)
+  ));
+}
+const delayMs = (seconds) => {
+  const time = now();
+  // now or in the past, no delay
+  if(time >= seconds) return 0;
+  return (seconds - time) * 1000;
 }
 const stopTimeout = () => {
   if(stopOscillatorsTimeoutId) {
@@ -105,7 +112,7 @@ export function stopAt(streamEndSeconds) {
   stopTimeout();
   stopOscillatorsTimeoutId = window.setTimeout(
     stop,
-    (streamEndSeconds - now()) * 1000
+    delayMs(streamEndSeconds)
   );
 }
 export function stop() {
@@ -118,6 +125,8 @@ export function stop() {
     }
   )
   oscillators.length = 0;
+  futureEventIds.forEach(window.clearTimeout);
+  futureEventIds.length = 0;
   dispatcher.emit('end');
   stopTimeout();
 }

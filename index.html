@@ -9,37 +9,7 @@
 
 <body>
   <h1>Data Over Audio</h1>
-  <div class="panels">
-    <div>
-      <h2>Communications</h2>
-      <div>
-        <h4>Send</h4>
-        <label>
-          <input type="radio" name="send-via" id="send-via-analyzer" checked>Analyzer
-        </label><br />
-        <label>
-          <input type="radio" name="send-via" id="send-via-speaker">Speakers
-        </label><br />
-        <h4>Receive</h4>
-        <label>
-          <input type="checkbox" id="is-listening-checkbox">Listening
-        </label>
-
-      </div>
-    </div>
-    <div>
-      <h2>Message</h2>
-      <div>
-        <input type="text" id="text-to-send">
-        <button id="send-button">Send</button><br />
-        <h4>Received</h4>
-        <div class="progress-container">
-          <div id="received-progress" class="progress-bar"></div>
-        </div>
-        <div class="raw-data-small" id="decoded-text"></div><br />
-
-      </div>
-    </div>
+  <div class="panels" id="panel-container">
     <div>
       <h2>Encoded segments to send</h2>
       <div>
