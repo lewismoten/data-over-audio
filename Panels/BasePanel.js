@@ -35,10 +35,9 @@ class BasePanel {
       input.name = name;
       input.checked = checked;
       input.value = value;
-      input.id = id;
+      input.id = this.childId(id);
       input.addEventListener('change', e => {
         this.dispatcher.emit(eventName, {
-          panel: this.id,
           name,
           id,
           index,
@@ -58,7 +57,7 @@ class BasePanel {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = value;
-    input.id = id;
+    input.id = this.childId(id);
     input.addEventListener('input', e => {
       this.dispatcher.emit(eventName, {
         panel: this.id,
@@ -70,7 +69,7 @@ class BasePanel {
   }
   addButton = (id, text, eventName = 'click') => {
     const button = document.createElement('button');
-    button.id = id;
+    button.id = this.childId(id);
     button.innerText = text;
     button.addEventListener('click', e => {
       this.dispatcher.emit(eventName, {
@@ -85,27 +84,32 @@ class BasePanel {
     const progressBar = document.createElement('div');
     progressBar.className = 'progress-container';
     const bar = document.createElement('div');
-    bar.id = id;
+    bar.id = this.childId(id);
     bar.className = 'progress-bar';
     bar.style.width = `${clamp(percent, 0, 1) * 100}%`;
     progressBar.append(bar);
     this.append(progressBar);
   }
   setProgressById = (id, percent) => {
-    const element = document.getElementById(id);
+    const element = document.getElementById(this.childId(id));
     if(!element) throw new Error(`Unable to find ${id}`);
     element.style.width = `${clamp(percent, 0, 1) * 100}%`;
   }
-  addCode = (id, value, type = '') => {
+  childId = id => `${this.id}-${id}`;
+  getElement = id => {
+    const element = document.getElementById(this.childId(id));
+    if(!element) throw new Error(`Unable to find ${id}`);
+    return element;
+  }
+  addCode = (id, value = '', type = '') => {
     const code = document.createElement('div');
-    code.id = id;
+    code.id = this.childId(id);
     code.innerText = value;
     code.className = type === '' ? 'raw-data' : `raw-data-${type}`;
     this.append(code);
   }
   setValueById = (id, value) => {
-    const element = document.getElementById(id);
-    if(!element) throw new Error(`Unable to find ${id}`);
+    const element = this.getElement(id);
     switch(element.tagName) {
       case 'INPUT':
       case 'SELECT':
@@ -116,13 +120,11 @@ class BasePanel {
     }
   }
   setHtmlById = (id, html) => {
-    const element = document.getElementById(id);
-    if(!element) throw new Error(`Unable to find ${id}`);
+    const element = this.getElement(id);
     element.innerHTML = html;
   }
   getValueById = (id) => {
-    const element = document.getElementById(id);
-    if(!element) throw new Error(`Unable to find ${id}`);
+    const element = this.getElement(id);
     switch(element.tagName) {
       case 'INPUT':
       case 'SELECT':
@@ -131,16 +133,10 @@ class BasePanel {
         return element.innerText;
     }
   }
-  setCheckedById = (id, checked) => {
-    const element = document.getElementById(id);
-    if(!element) throw new Error(`Unable to find ${id}`);
-    element.checked = checked;
+  setCheckedById = (id, checked = true) => {
+    this.getElement(id).checked = !!checked;
   }
-  getCheckedById = (id) => {
-    const element = document.getElementById(id);
-    if(!element) throw new Error(`Unable to find ${id}`);
-    return element.checked;
-  }
+  getCheckedById = (id) => !!(this.getElement(id).checked);
   append = (element) => this.container.appendChild(element);
   clear = () => this.container.innerHTML = '';
   addEventListener = (eventName, callback) => this.dispatcher.addListener(eventName, callback);

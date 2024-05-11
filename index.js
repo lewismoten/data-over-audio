@@ -9,6 +9,7 @@ import * as AudioReceiver from './AudioReceiver';
 import * as CRC from './CRC.js';
 import CommunicationsPanel from './Panels/CommunicationsPanel';
 import MessagePanel from "./Panels/MessagePanel.js";
+import CodePanel from "./Panels/CodePanel.js";
 
 var audioContext;
 var microphoneStream;
@@ -63,9 +64,13 @@ var PACKET_SIZE_BITS = 5; // 32 bytes, 256 bits
 
 const communicationsPanel = new CommunicationsPanel();
 const messagePanel = new MessagePanel();
+const bitsSentPanel = new CodePanel('Bits Sent');
+const bitsReceivedPanel = new CodePanel('Bits Received');
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
+  panelContainer.prepend(bitsReceivedPanel.getDomElement());
+  panelContainer.prepend(bitsSentPanel.getDomElement());
   panelContainer.prepend(messagePanel.getDomElement());
   panelContainer.prepend(communicationsPanel.getDomElement());
 
@@ -78,6 +83,9 @@ function handleWindowLoad() {
   messagePanel.setProgress(0);
   messagePanel.setReceived('');
   messagePanel.setSendButtonText('Send');
+
+  bitsSentPanel.setCode('');
+  bitsReceivedPanel.setCode('');
 
   // Communications Events
   communicationsPanel.addEventListener('listeningChange', handleChangeListening);
@@ -233,6 +241,7 @@ function showChannelList() {
 
 function handleAudioSenderSend({bits}) {
   SENT_TRANSFER_BITS.push(...bits);
+  showSentBits();
 }
 function configurationChanged() {
   updatePacketUtils();
@@ -489,6 +498,14 @@ function sendBytes(bytes) {
   }
   AudioSender.stopAt(startSeconds + totalDurationSeconds);
 
+  showSentBits();
+
+  // start the graph moving again
+  resumeGraph();
+}
+function showSentBits() {
+  const channelCount = getChannels().length;
+
   // original bits
   document.getElementById('sent-data').innerHTML =
     SENT_ORIGINAL_BITS.reduce(bitReducer(
@@ -506,16 +523,12 @@ function sendBytes(bytes) {
   } else {
     document.getElementById('error-correcting-data').innerHTML = '';
   }
-
-  document.getElementById('actual-bits-to-send').innerHTML = 
-  SENT_TRANSFER_BITS.reduce(bitReducer(
+  bitsSentPanel.setCode(
+    SENT_TRANSFER_BITS.reduce(bitReducer(
     PacketUtils.getPacketMaxBitCount() + PacketUtils.getPacketLastSegmentUnusedBitCount(),
     channelCount,
     (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
-  ), '');  
-
-  // start the graph moving again
-  resumeGraph();
+  ), ''));  
 }
 function sendPacket(bits, packetStartSeconds) {
   const channels = getChannels();
@@ -619,11 +632,10 @@ function handleStreamManagerChange() {
   const correctEncodedBits = allEncodedBits.filter((b, i) => i < encodedBitCount && b === SENT_ENCODED_BITS[i]).length;
   const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === SENT_ORIGINAL_BITS[i]).length;
 
-  const receivedProgess = document.getElementById('received-progress');
-  let percentReceived = allRawBits.length / totalBitsTransferring;
-  receivedProgess.style.width = `${Math.floor(Math.min(1, percentReceived) * 100)}%`;
+  let percentReceived = StreamManager.sumTotalBits() / totalBitsTransferring;
+  messagePanel.setProgress(percentReceived);
 
-  document.getElementById('received-encoded-segment-bits').innerHTML = allRawBits
+  bitsReceivedPanel.setCode(allRawBits
     .reduce(
       bitExpectorReducer(
         SENT_TRANSFER_BITS,
@@ -631,7 +643,7 @@ function handleStreamManagerChange() {
         channelCount,
         (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
       ),
-    '');
+    ''));
     if(HAMMING_ERROR_CORRECTION) {
       document.getElementById('received-encoded-bits').innerHTML = allEncodedBits
       .reduce(
@@ -671,7 +683,9 @@ function handleStreamManagerChange() {
   ).toLocaleString();
   // ArrayBuffer / ArrayBufferView
   const receivedText = bitsToText(allDecodedBits);
-  document.getElementById('decoded-text').innerHTML = receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '');
+  messagePanel.setReceived(
+    receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '')
+  );
 }
 function asHex(length) {
   return (number) => number.toString(16).padStart(length, '0').toUpperCase();

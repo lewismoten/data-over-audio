@@ -60,6 +60,10 @@ export const addBits = (
   if(hasNewBits(oldBits, bits))
     dispatcher.emit('change');
 }
+const sumSegmentBits = (sum, segment) => sum + segment.length;
+const sumPacketBits = (sum, packet) => sum + packet.reduce(sumSegmentBits, 0);
+export const sumTotalBits = () => BITS.reduce(sumPacketBits, 0);
+
 const hasNewBits = (oldBits = [], bits = []) => {
   if(oldBits.length === 0 && bits.length === BITS_PER_SEGMENT)
     return true;
