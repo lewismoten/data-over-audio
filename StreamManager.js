@@ -1,4 +1,7 @@
+import Dispatcher from "./Dispatcher";
 import { bitsToInt } from "./converters";
+
+const dispatcher = new Dispatcher('StreamManager', ['change']);
 
 const BITS = [];
 let BITS_PER_PACKET = 0;
@@ -12,6 +15,16 @@ let SEGMENT_ENCODING = {
 let PACKET_ENCODING = {
   encode: bits => bits,
   decode: bits => bits
+}
+
+export const addEventListener = dispatcher.addListener;
+export const removeEventListener = dispatcher.removeListener;
+
+export const reset = () => {
+  if(BITS.length !== 0) {
+    BITS.length = 0;
+    dispatcher.emit('change');
+  }
 }
 
 export const changeConfiguration = ({
@@ -42,7 +55,20 @@ export const addBits = (
   if(BITS[packetIndex] === undefined) {
     BITS[packetIndex] = [];
   }
+  const oldBits = BITS[packetIndex][segmentIndex];
   BITS[packetIndex][segmentIndex] = bits;
+  if(hasNewBits(oldBits, bits))
+    dispatcher.emit('change');
+}
+const hasNewBits = (oldBits = [], bits = []) => {
+  if(oldBits.length === 0 && bits.length === BITS_PER_SEGMENT)
+    return true;
+  for(let i = 0; i < BITS_PER_SEGMENT; i++) {
+    let a = oldBits[i] ?? 0;
+    let b = bits[i] ?? 0;
+    if(a !== b) return true;
+  }
+  return false;
 }
 export const getPacketReceivedCount = () => {
   if(BITS.length === 0) return 1;

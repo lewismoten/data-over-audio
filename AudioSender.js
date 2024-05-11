@@ -1,3 +1,7 @@
+import Dispatcher from "./Dispatcher";
+
+const dispatcher = new Dispatcher('AudioSender', ['begin', 'end', 'send']);
+
 let audioContext;
 let CHANNELS = [];
 let DESTINATION;
@@ -8,6 +12,9 @@ let CHANNEL_OSCILLATORS = [];
 let WAVE_FORM;
 
 let stopOscillatorsTimeoutId;
+
+export const addEventListener = dispatcher.addListener;
+export const removeEventListener = dispatcher.removeListener;
 
 export const changeConfiguration = ({
   channels,
@@ -58,7 +65,7 @@ export function beginAt(streamStartSeconds) {
     oscillator.start(streamStartSeconds);
     oscillators.push(oscillator);
   }
-  callFn(ON_START);
+  dispatcher.emit('begin');
   return oscillators;
 }
 function getOscillators() {
@@ -66,10 +73,11 @@ function getOscillators() {
 }
 export function send(bits, startSeconds) {
   const oscillators = getOscillators();
+  const sentBits = [];
   getChannels().forEach((channel, i) => {
     // send missing bits as zero
     const isHigh = bits[i] ?? 0;
-    callFn(ON_SEND, isHigh);
+    sentBits.push(isHigh);
     const oscillator = oscillators[i];
     // already at correct frequency
     if(oscillator.on === isHigh) return;
@@ -77,6 +85,7 @@ export function send(bits, startSeconds) {
     const hz = channel[isHigh ? 1 : 0];
     oscillator.frequency.setValueAtTime(hz, startSeconds);
   });
+  dispatcher.emit('send', {bits: sentBits, startSeconds});
 }
 const stopTimeout = () => {
   if(stopOscillatorsTimeoutId) {
@@ -109,7 +118,6 @@ export function stop() {
     }
   )
   oscillators.length = 0;
-  callFn(ON_STOP);
+  dispatcher.emit('end');
   stopTimeout();
 }
-const callFn = (fn, ...args) => typeof fn === 'function' ? fn(...args) : 0;

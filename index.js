@@ -5,6 +5,7 @@ import * as PacketUtils from './PacketUtils';
 import * as Humanize from './Humanize';
 import * as Randomizer from './Randomizer';
 import * as AudioSender from './AudioSender';
+import * as AudioReceiver from './AudioReceiver';
 import * as CRC from './CRC.js';
 
 var audioContext;
@@ -32,9 +33,7 @@ let SENT_ENCODED_BITS = []; // bits with error encoding
 let SENT_TRANSFER_BITS = []; // bits sent in the transfer
 
 // interval and timeout ids
-var pauseGraphId;
 let stopOscillatorsTimeoutId;
-var sampleIntervalIds = [];
 
 let EXCLUDED_CHANNELS = [];
 
@@ -63,11 +62,7 @@ let SEGMENT_SELECTED = -1;
 
 var SEND_VIA_SPEAKER = false;
 var RECEIVED_STREAM_START_MS = -1;
-let RECEIVED_STREAM_END_MS = -1;
-var MINIMUM_INTERVAL_MS = 3; // DO NOT SET THIS BELOW THE BROWSERS MINIMUM "real" INTERVAL
-const SAMPLING_INTERVAL_COUNT = 2;
 let SAMPLES = [];
-let SAMPLE_LAST_COLLECTED = 0; // time when sample was last collected
 
 var bitStart = [];
 var PAUSE = false;
@@ -76,6 +71,16 @@ var PACKET_SIZE_BITS = 5; // 32 bytes, 256 bits
 
 function handleWindowLoad() {
   TEXT_TO_SEND = Randomizer.text(5);
+  // Setup audio sender
+  AudioSender.addEventListener('begin', () => sendButton.innerText = 'Stop');
+  AudioSender.addEventListener('send', handleAudioSenderSend);
+  AudioSender.addEventListener('end', () => sendButton.innerText = 'Send');
+  // Setup audio receiver
+  AudioReceiver.addEventListener('begin', handleAudioReceiverStart);
+  AudioReceiver.addEventListener('receive', handleAudioReceiverReceive);
+  AudioReceiver.addEventListener('end', handleAudioReceiverEnd);
+  // Setup stream manager
+  StreamManager.addEventListener('change', handleStreamManagerChange);
 
   // grab dom elements
   sendButton = document.getElementById('send-button');
@@ -222,19 +227,14 @@ function showChannelList() {
   drawChannels();
 }
 
-function handleAudioSenderStart() {
-  sendButton.innerText = 'Stop';
-}
-function handleAudioSenderStop() {
-  sendButton.innerText = 'Send';
-}
-function handleAudioSenderSend(bit) {
-  SENT_TRANSFER_BITS.push(bit);
+function handleAudioSenderSend({bits}) {
+  SENT_TRANSFER_BITS.push(...bits);
 }
 function configurationChanged() {
   updatePacketUtils();
   updateStreamManager();
   updateAudioSender();
+  updateAudioReceiver();
   showChannelList();
   updateFrequencyResolution();
   updatePacketStats();
@@ -243,10 +243,37 @@ function updateAudioSender() {
   AudioSender.changeConfiguration({
     channels: getChannels(),
     destination: SEND_VIA_SPEAKER ? audioContext.destination : getAnalyser(),
-    startCallback: handleAudioSenderStart,
-    stopCallback: handleAudioSenderStop,
-    sendCallback: handleAudioSenderSend,
     waveForm: WAVE_FORM
+  });
+}
+const logFn = text => (...args) => {
+  // console.log(text, ...args);
+}
+const handleAudioReceiverStart = ({signalStart}) => {
+  StreamManager.reset();
+  RECEIVED_STREAM_START_MS = signalStart;
+}
+const handleAudioReceiverReceive = ({signalStart, signalIndex, indexStart, bits}) => {
+  const packetIndex = PacketUtils.getPacketIndex(signalStart, indexStart);
+  const segmentIndex = PacketUtils.getPacketSegmentIndex(signalStart, indexStart);
+  // Getting all 1's for only the first 5 segments?
+  // console.log(signalIndex, packetIndex, segmentIndex, bits.join(''));
+  StreamManager.addBits(packetIndex, segmentIndex, bits);
+}
+const handleAudioReceiverEnd = () => {
+  if(PAUSE_AFTER_END) {
+    stopGraph();
+    AudioSender.stop();
+  }
+}
+function updateAudioReceiver() {
+  AudioReceiver.changeConfiguration({
+    fskSets: getChannels(),
+    segmentDurationMs: SEGMENT_DURATION,
+    amplitudeThreshold: AMPLITUDE_THRESHOLD,
+    analyser: getAnalyser(),
+    signalIntervalMs: SEGMENT_DURATION,
+    sampleRate: getAudioContext().sampleRate
   });
 }
 function updateStreamManager() {
@@ -522,26 +549,14 @@ function padArray(values, length, value) {
 
 function stopGraph() {
   PAUSE = true;
-  stopCollectingSamples();
+  AudioReceiver.stop();
 }
-function startCollectingSamples() {
-  for(let i = 0; i < SAMPLING_INTERVAL_COUNT; i++) {
-    if(sampleIntervalIds[i]) continue;
-    sampleIntervalIds[i] = window.setInterval(
-      collectSample,
-      MINIMUM_INTERVAL_MS + (i/SAMPLING_INTERVAL_COUNT)
-    );
-  }
-}
-function stopCollectingSamples() {
-  sampleIntervalIds.forEach(window.clearInterval);
-  sampleIntervalIds = sampleIntervalIds.map(() => {});
-}
+
 function resumeGraph() {
   if(isListeningCheckbox.checked) {
     if(PAUSE) {
       PAUSE = false;
-      startCollectingSamples();
+      AudioReceiver.start();
       resetGraphData();
       requestAnimationFrame(drawFrequencyData);  
     } else {
@@ -550,196 +565,6 @@ function resumeGraph() {
   } else {
     PAUSE = false;
   }
-}
-function collectSample() {
-  const time = performance.now();
-  // Do nothing if we already collected the sample
-  if(time === SAMPLE_LAST_COLLECTED) return;
-  SAMPLE_LAST_COLLECTED = time;
-  const frequencies = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(frequencies);
-  const length = audioContext.sampleRate / analyser.fftSize;
-  // Get amplitude of each channels set of frequencies
-  const channelAmps = getChannels().map(hzSet => hzSet.map(hz => frequencies[Math.round(hz / length)]));
-  const hasSignal = channelAmps.some(amps => amps.some(amp => amp > AMPLITUDE_THRESHOLD));
-  if(hasSignal) {
-    abandonPauseAfterLastSignalEnded();
-    if(time > RECEIVED_STREAM_END_MS) {
-      resetReceivedData();
-      // New stream
-      RECEIVED_STREAM_START_MS = time;
-      // Assume at least 1 full packet arriving
-      RECEIVED_STREAM_END_MS = getPacketEndMilliseconds(time);
-    }
-  } else {
-    pauseAfterSignalEnds();
-  }
-  if(time >= RECEIVED_STREAM_START_MS && time <= RECEIVED_STREAM_END_MS) {
-    // determine packet/segment index based on time as well as start/end times for packet
-    const packetIndex = PacketUtils.getPacketIndex(RECEIVED_STREAM_START_MS, time);
-    const segmentIndex = PacketUtils.getPacketSegmentIndex(RECEIVED_STREAM_START_MS, time);
-    SAMPLES.unshift({
-      time,
-      pairs: channelAmps,
-      packetIndex,
-      segmentIndex,
-      streamStarted: RECEIVED_STREAM_START_MS,
-    });
-  }
-  processSamples();
-  truncateGraphData();
-}
-function abandonPauseAfterLastSignalEnded() {
-  if(pauseGraphId) {
-    window.clearTimeout(pauseGraphId);
-    pauseGraphId = undefined;
-  }
-}
-function pauseAfterSignalEnds() {
-  // If we never had a signal, do nothing.
-  if(RECEIVED_STREAM_START_MS === -1) return;
-  // If we continue after a signal ends, do nothing.
-  if(!PAUSE_AFTER_END) return;
-  // If we are already setup to pause, do nothing
-  if(pauseGraphId) return;
-
-  // pause after waiting for 2 segments to come through
-  let delay = PacketUtils.getSegmentDurationMilliseconds() * 2;
-
-  // Long segments? Pause for no more than 400 milliseconds
-  delay = Math.min(400, delay);
-
-  // we haven't paused yet. Let's prepare to pause
-  pauseGraphId = window.setTimeout(() => {
-    pauseGraphId = undefined;
-    // if user still wants to pause, stop the graph
-    if(PAUSE_AFTER_END) {
-      stopGraph();
-
-      // are we the sender as well?
-      // Stop sending the signal.
-      AudioSender.stop();
-    }
-  }, delay);
-}
-
-function hasSampleSegmentCompleted(now) {
-  return ({streamStarted, packetIndex, segmentIndex}) => now >
-    PacketUtils.getPacketSegmentEndMilliseconds(streamStarted, packetIndex, segmentIndex);
-}
-function hasSamplePacketCompleted(now) {
-  return ({streamStarted, packetIndex}) => now >
-    getPacketIndexEndMilliseconds(streamStarted, packetIndex);
-}
-function consolidateFotPackets(all, {streamStarted, packetIndex}) {
-  const isMatch = (fot) => {
-    fot.streamStarted === streamStarted &&
-    fot.packetIndex === packetIndex
-  };
-
-  if(!all.some(isMatch))
-    all.push({streamStarted, packetIndex});
-  return all;
-}
-const consolidateUnprocessedSampleSegments = now => (all, {
-  streamStarted,
-  packetIndex,
-  segmentIndex,
-  processedSegment
-}) => {
-
-  const isMatch = (sample) => {
-    sample.streamStarted === streamStarted &&
-    sample.packetIndex === packetIndex &&
-    sample.segmentIndex === segmentIndex
-  };
-
-  if(!processedSegment) {
-    if(!all.some(isMatch)) {
-      const end = PacketUtils.getPacketSegmentEndMilliseconds(streamStarted, packetIndex, segmentIndex);
-      if(end < now)
-        all.push({
-          streamStarted,
-          packetIndex,
-          segmentIndex
-        });
-    }
-  }
-  return all;
-}
-const markSampleSegmentProcessed = sample => sample.processedSegment = true;
-const hasNotProcessedPacket = sample => sample.processedPacket;
-const markSamplePacketProcessed = sample => sample.processedPacket = true;
-
-function processSamples() {
-  const now = performance.now();
-  // Process completed segments
-  SAMPLES
-    .reduce(consolidateUnprocessedSampleSegments(now), [])
-    .every(({
-      streamStarted, packetIndex, segmentIndex
-    }) => {
-      processSegmentReceived(streamStarted, packetIndex, segmentIndex);
-    });
-
-  // Process completed packets
-  SAMPLES
-    .filter(hasNotProcessedPacket)
-    .reduce(consolidateFotPackets, [])
-    .filter(hasSamplePacketCompleted(now))
-    .every(({
-      streamStarted, packetIndex
-    }) => {
-      processPacketReceived(streamStarted, packetIndex);
-    });
-}
-
-function GET_SEGMENT_BITS(streamStarted, segmentIndex, packetIndex, originalOrder = false) {
-
-  const samples = SAMPLES.filter(f => 
-    f.segmentIndex === segmentIndex &&
-    f.packetIndex === packetIndex &&
-    f.streamStarted === streamStarted
-  );
-  const channelCount = SAMPLES[0].pairs.length;
-  const channelFrequencyCount = 2;
-  const sums = new Array(channelCount)
-    .fill(0)
-    .map(() => 
-      new Array(channelFrequencyCount)
-      .fill(0)
-    );
-  samples.forEach(({pairs}) => {
-    pairs.forEach((amps, channel) => {
-      amps.forEach((amp, i) => {
-        sums[channel][i] += amp;
-      });
-    });
-  });
-  const bitValues = sums.map((amps) => amps[0] > amps[1] ? 0 : 1);
-  // if(packetIndex === 0 && segmentIndex === 1) {
-    // console.log(packetIndex, segmentIndex, bitValues.join(''))
-  // }
-  return originalOrder ? bitValues : InterleaverEncoding.decode(bitValues);
-}
-function resetReceivedData() {
-  resetStream();
-  resetPacket();
-}
-function resetStream() {
-  RECEIVED_STREAM_END_MS = -1;
-  RECEIVED_STREAM_START_MS = -1;
-  RECEIVED_SEGMENT_BITS.length = 0;
-}
-function resetPacket() {
-}
-function processPacketReceived(streamStarted, packetIndex) {
-  SAMPLES.filter(
-    fot => fot.streamStarted === streamStarted &&
-    fot.packetIndex === packetIndex
-  ).forEach(markSamplePacketProcessed);
-  resetPacket();
-  updateReceivedData();
 }
 
 function getTransferredCorrectedBits() {
@@ -755,25 +580,8 @@ function getTransferredCorrectedBits() {
   }
   return bits;
 }
-function processSegmentReceived(streamStarted, packetIndex, segmentIndex) {
 
-  const isSegment = sample => (
-    sample.streamStarted === streamStarted &&
-    sample.packetIndex === packetIndex &&
-    sample.segmentIndex === segmentIndex
-  );
-
-  let bitValues = GET_SEGMENT_BITS(streamStarted, segmentIndex, packetIndex, segmentIndex, true);
-
-  StreamManager.addBits(packetIndex, segmentIndex, bitValues);
-
-  // mark samples as processed
-  SAMPLES.filter(isSegment).every(markSampleSegmentProcessed);
-
-  updateReceivedData();
-}
-
-function updateReceivedData() {
+function handleStreamManagerChange() {
   const channelCount = getChannels().length;
   let allRawBits = StreamManager.getStreamBits();
   let allEncodedBits = StreamManager.getAllPacketBits();
@@ -1005,22 +813,6 @@ function resetGraphData() {
   SAMPLES.length = 0;
   bitStart.length = 0;
 }
-function truncateGraphData() {
-  const duration = SEGMENT_DURATION * MAX_BITS_DISPLAYED_ON_GRAPH;
-  const now = performance.now();
-  let length = SAMPLES.length;
-  while(length !== 0) {
-    const time = SAMPLES[length-1].time;
-    if(now - time > duration) length--;
-    else break;
-  }
-  if(length !== SAMPLES.length) {
-    SAMPLES.length = length;
-    bitStart.length = length;
-  }
-  // remove processed segments
-  SAMPLES = SAMPLES.filter(s => !s.segmentProcessed);
-}
 function getAudioContext() {
   if(!audioContext) {
     audioContext = new (window.AudioContext || webkitAudioContext)();
@@ -1081,14 +873,14 @@ function bitsToText(bits) {
   return bytesToText(bytes.buffer);
 }
 function handleSendButtonClick() {
-  if(stopOscillatorsTimeoutId) {
-    disconnectOscillators();
-    return;
+  if(sendButton.innerText === 'Stop') {
+    AudioSender.stop();
+  } else {
+    AudioReceiver.reset();
+    StreamManager.reset();
+    const text = document.getElementById('text-to-send').value;
+    sendBytes(textToBytes(text));
   }
-  resetReceivedData();
-
-  const text = document.getElementById('text-to-send').value;
-  sendBytes(textToBytes(text));
 }
 function getAnalyser() {
   if(analyser) return analyser;
