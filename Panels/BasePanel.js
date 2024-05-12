@@ -27,45 +27,93 @@ class BasePanel {
   addCheckboxes = (name, items) => {
     this.addCheckedInputs('checkbox', name, items);
   };
+  openField = name => this.addText(`${name}: `);
+  addText = text => this.append(document.createTextNode(text));
+  addDynamicText = (id, text) => {
+    const span = document.createElement('span');
+    span.id = this.childId(id);
+    span.innerText = text;
+    return this.append(span);
+  }
+  closeField = () => this.addNewLine();
+  addNewLine = () => this.append(document.createElement('br'));
+  addDropdown = (id, items, eventName = 'change') => {
+    const select = document.createElement('select');
+    select.id = this.childId(id);
+    select.addEventListener('change', (e) => {
+      const values = [...select.selectedOptions].map(option => option.value);
+      this.dispatcher.emit(eventName, {
+        id,
+        values
+      });
+    });
+    items.forEach((item, i) => {
+      const option = document.createElement('option');
+      option.value = item.value;
+      option.text = item.text;
+      if(item.selected) {
+        if(select.selectedIndex === -1) {
+          select.selectedIndex = i;
+        }
+        option.selected = item.selected;
+      }
+      select.append(option);
+    });
+    if(select.selectedIndex === -1 && items.length !== 0) {
+      select.selectedIndex = 0;
+    }
+    this.append(select);
+  }
   addCheckedInputs = (type, name, items, value) => {
-    items.forEach(({id, text, checked = false, eventName = 'change'}, index)=> {
+    items.forEach(({id, text, checked = false, eventName = 'change'})=> {
       const label = document.createElement('label');
-      const input = document.createElement('input');
-      input.type = type;
-      input.name = name;
-      input.checked = checked;
-      input.value = value;
-      input.id = this.childId(id);
-      input.addEventListener('change', e => {
-        this.dispatcher.emit(eventName, {
-          name,
-          id,
-          index,
-          checked: e.target.checked,
-          value
-        });
-      })
+      label.for = this.childId(id);
+      const input = this.createInput(id, value, {name, checked, type, eventName});
       label.appendChild(input);
       const textNode = document.createTextNode(text);
       label.append(textNode);
       this.append(label);
-      const br = document.createElement('br');
-      this.append(br);
+      this.addNewLine();
     });
   }
-  addInputText = (id, value, eventName = 'input') => {
+  addInputText = (id, value, options = {}) => {
+    this.append(this.createInput(id, value, {...options, type: 'text'}));
+  }
+  addInputNumber = (id, value, options = {}) => {
+    this.append(this.createInput(id, value, {...options, type: 'number'}));
+  }
+  createInput = (id, value = '', options = {}) => {
+    const {
+      eventName = 'input',
+      type = 'text',
+      translation,
+      ...attr
+    } = options;
     const input = document.createElement('input');
-    input.type = 'text';
     input.value = value;
     input.id = this.childId(id);
-    input.addEventListener('input', e => {
-      this.dispatcher.emit(eventName, {
-        panel: this.id,
-        id,
-        value
+    input.type = type;
+    if(['radio', 'checkbox'].includes(type)) {
+      input.addEventListener('change', e => {
+        this.dispatcher.emit(eventName, {
+          id,
+          checked: e.target.checked,
+          value
+        });
+      })
+    } else {
+      input.addEventListener('input', e => {
+        this.dispatcher.emit(eventName, {
+          panel: this.id,
+          id,
+          value: translateValue(e.target.value, translation)
+        });
       });
-    });
-    this.append(input);
+    }
+    Object.keys(attr).forEach(key => {
+      input[key] = options[key];
+    })
+    return input;
   }
   addButton = (id, text, eventName = 'click') => {
     const button = document.createElement('button');
@@ -79,6 +127,13 @@ class BasePanel {
       });
     });
     this.append(button);
+  }
+  addCanvas = (id, width, height) => {
+    const canvas = document.createElement('canvas');
+    canvas.id = this.childId(id);
+    canvas.width = width;
+    canvas.height = height;
+    return this.append(canvas);
   }
   addProgressBar = (id, percent) => {
     const progressBar = document.createElement('div');
@@ -96,8 +151,10 @@ class BasePanel {
     element.style.width = `${clamp(percent, 0, 1) * 100}%`;
   }
   childId = id => `${this.id}-${id}`;
+
   getElement = id => {
-    const element = document.getElementById(this.childId(id));
+    const element = this.getDomElement().querySelector(`#${this.childId(id)}`);
+    // const element = document.getElementById(this.childId(id));
     if(!element) throw new Error(`Unable to find ${id}`);
     return element;
   }
@@ -141,6 +198,16 @@ class BasePanel {
   clear = () => this.container.innerHTML = '';
   addEventListener = (eventName, callback) => this.dispatcher.addListener(eventName, callback);
   removeEventListener = (eventName, callback) => this.dispatcher.removeListener(eventName, callback);
+}
+const translateValue = (value, translation) => {
+  if(!translation) return value;
+  if(translation === 'percent') {
+    return parseInt(value) / 100;
+  } else if(translation === 'power of 2') {
+    return 2 ** parseInt(value);
+  }
+  console.warn('Unknown translation', translation)
+  return value;
 }
 
 export default BasePanel;

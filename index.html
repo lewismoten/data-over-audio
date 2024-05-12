@@ -11,34 +11,12 @@
   <h1>Data Over Audio</h1>
   <div class="panels" id="panel-container">
     <div>
-      <h2>Configuration</h2>
+      <h2>Packetizaton</h2>
       <div>
-        <h4>Audio</h4>
-        Wave Form: <select id="wave-form" value="sine">
-          <option value="sine">Sine Wave</option>
-          <option value="square">Square Wave</option>
-          <option value="sawtooth">Sawtooth Wave</option>
-          <option value="triangle">Triangle Wave</option>
-        </select><br>
-        Minimum Frequency: <input id="minimum-frequency" type="number" min="20" max="20000" value="900"><br>
-        Maximum Frequency: <input id="maximum-frequency" type="number" min="20" max="20000" value="1200"><br>
-        Segment Duration: <input id="bit-duration-text" type="number" min="0" max="1000" value="190">ms<br>
-        FFT Size: 2^<input id="fft-size-power-text" type="number" min="5" max="15" value="90"><br>
-        Frequency Resolution Multiplier: <input id="frequency-resolution-multiplier" type="number" min="1" max="20"
-          value="2"><br>
-        Channel Frequency Resolution Padding: <input id="channel-frequency-resolution-padding" type="number" min="0"
-          max="20"><br>
-
-        <h4>Packetization</h4>
         Packet Size:
         2^<input id="packet-size-power" type="number" min="0" max="16">
         <span id="packet-size"></span>
         <br>
-        <h4>Receiving</h4>
-        Amplitude Threshold: <input id="amplitude-threshold-text" type="number" min="0" max="100" value="75"><br>
-        Last Segment Percent: <input id="last-bit-percent" type="number" min="0" max="100" value="90">%<br>
-        Smoothing Time Constant: <input id="smoothing-time-constant-text" type="number" min="0.00" max="1.00"
-          step="0.01" value="0.00"><br>
         <h4>Encoding</h4>
         <label>
           <input type="checkbox" id="periodic-interleaving" checked>Interleaving
