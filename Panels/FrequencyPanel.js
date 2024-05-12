@@ -1,11 +1,14 @@
 import BasePanel from './BasePanel';
 
 class FrequencyPanel extends BasePanel {
-  constructor(sampleRate = 48000) {
+  constructor() {
     super('Frequencies');
 
-    this.sampleRate = sampleRate;
-    const ultimateFrequency = sampleRate / 2;
+    this.sampleRate = 48000;
+    const ultimateFrequency = this.sampleRate / 2;
+
+    this.addCanvas('frequency-spectrum', 200, 32);
+    this.addNewLine();
 
     this.openField('Minimum');
     this.addInputNumber('minimum-frequency', 0, {min: 0, max: ultimateFrequency, eventName: 'minimumFrequencyChange'});
@@ -35,9 +38,6 @@ class FrequencyPanel extends BasePanel {
     this.addInputNumber('multi-fsk-padding', 0, {min: 0, max: 20, eventName: 'multiFskPaddingChange'});
     this.closeField();
 
-    this.addCanvas('frequency-spectrum', 200, 32);
-    this.addNewLine();
-
     this.openField('FSK Pairs Available');
     this.addDynamicText('fsk-count', 'N/A');
     this.closeField();
@@ -51,6 +51,11 @@ class FrequencyPanel extends BasePanel {
     this.originalFskPairs = this.getFskPairs();
     this.drawFrequencySpectrum();
   };
+  setSampleRate = (value) => {
+    this.sampleRate = value;
+    this.checkFskPairsChanged();
+  }
+
   getMinimumFrequency = () => parseInt(this.getValueById('minimum-frequency'));
   setMinimumFrequency = value => {
     this.setValueById('minimum-frequency', value);
@@ -96,10 +101,8 @@ class FrequencyPanel extends BasePanel {
     if(original.length !== current.length) {
       changed = true;
     } else {
-      changed = original.some(
-        (fsk, fskIndex) => {
-          return fsk.some((hz, hzIndex) => hz !== original[fskIndex][hzIndex]);
-        })
+      const currentHz = current.flat();
+      changed = original.flat().some((hz, i) => hz !== currentHz[i]);
     }
     if(changed) {
       this.originalFskPairs = current;

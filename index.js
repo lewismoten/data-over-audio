@@ -12,6 +12,8 @@ import MessagePanel from "./Panels/MessagePanel";
 import CodePanel from "./Panels/CodePanel";
 import FrequencyPanel from "./Panels/FrequencyPanel";
 import SignalPanel from "./Panels/SignalPanel";
+import PacketizationPanel from "./Panels/PacketizationPanel";
+import AvailableFskPairsPanel from "./Panels/AvailableFskPairsPanel";
 
 var audioContext;
 var microphoneStream;
@@ -32,8 +34,6 @@ let SENT_TRANSFER_BITS = []; // bits sent in the transfer
 let EXCLUDED_CHANNELS = [];
 
 var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
-var HAMMING_ERROR_CORRECTION = true;
-let PERIODIC_INTERLEAVING = true;
 
 const ERROR_CORRECTION_BLOCK_SIZE = 7;
 const ERROR_CORRECTION_DATA_SIZE = 4;
@@ -49,7 +49,6 @@ let SAMPLES = [];
 var bitStart = [];
 var PAUSE = false;
 var PAUSE_AFTER_END = true;
-var PACKET_SIZE_BITS = 5; // 32 bytes, 256 bits
 
 let USED_FSK = [];
 let AVAILABLE_FSK = [];
@@ -60,9 +59,13 @@ const bitsSentPanel = new CodePanel('Bits Sent');
 const bitsReceivedPanel = new CodePanel('Bits Received');
 const frequencyPanel = new FrequencyPanel();
 const signalPanel = new SignalPanel();
+const packetizationPanel = new PacketizationPanel();
+const availableFskPairsPanel = new AvailableFskPairsPanel();
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
+  panelContainer.prepend(availableFskPairsPanel.getDomElement());
+  panelContainer.prepend(packetizationPanel.getDomElement());
   panelContainer.prepend(signalPanel.getDomElement());
   panelContainer.prepend(frequencyPanel.getDomElement());
   panelContainer.prepend(bitsReceivedPanel.getDomElement());
@@ -94,6 +97,12 @@ function handleWindowLoad() {
   signalPanel.setAmplitudeThreshold(0.78);
   signalPanel.setSmoothingTimeConstant(0);
 
+  packetizationPanel.setSizePower(5);
+  packetizationPanel.setErrorCorrection(true);
+  packetizationPanel.setInterleaving(true);
+
+  availableFskPairsPanel.setFskPairs(frequencyPanel.getFskPairs());
+
   // Communications Events
   communicationsPanel.addEventListener('listeningChange', handleChangeListening);
   communicationsPanel.addEventListener('sendSpeakersChange', handleChangeSendSpeakers);
@@ -110,11 +119,23 @@ function handleWindowLoad() {
   });
   frequencyPanel.addEventListener('fskPaddingChange', configurationChanged);
   frequencyPanel.addEventListener('multiFskPaddingChange', configurationChanged);
+  frequencyPanel.addEventListener('fskPairsChange', ({value}) => {
+    availableFskPairsPanel.setFskPairs(value);
+  });
 
   signalPanel.addEventListener('waveformChange', updateAudioSender);
   signalPanel.addEventListener('segmentDurationChange', configurationChanged);
   signalPanel.addEventListener('amplitudeThresholdChange', configurationChanged);
   signalPanel.addEventListener('smoothingConstantChange', configurationChanged);
+
+  packetizationPanel.addEventListener('sizePowerChange', configurationChanged);
+  packetizationPanel.addEventListener('interleavingChange', () => {
+    StreamManager.setSegmentEncoding(
+      packetizationPanel.getInterleaving() ? InterleaverEncoding : undefined
+    );
+    configurationChanged();
+  });
+  packetizationPanel.addEventListener('errorCorrectionChange', configurationChanged);
 
   // Setup audio sender
   AudioSender.addEventListener('begin', () => messagePanel.setSendButtonText('Stop'));
@@ -135,27 +156,7 @@ function handleWindowLoad() {
   receivedChannelGraph.addEventListener('mouseout', handleReceivedChannelGraphMouseout);
   receivedChannelGraph.addEventListener('mousemove', handleReceivedChannelGraphMousemove);
   receivedChannelGraph.addEventListener('click', handleReceivedChannelGraphClick);
-  document.getElementById('packet-size-power').value = PACKET_SIZE_BITS;
-  document.getElementById('packet-size').innerText = Humanize.byteSize(2 ** PACKET_SIZE_BITS);
-  document.getElementById('packet-size-power').addEventListener('input', event => {
-    PACKET_SIZE_BITS = parseInt(event.target.value);
-    document.getElementById('packet-size').innerText = Humanize.byteSize(2 ** PACKET_SIZE_BITS);
-    configurationChanged();
-  });
   document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
-  document.getElementById('error-correction-hamming').checked = HAMMING_ERROR_CORRECTION;
-  document.getElementById('error-correction-hamming').addEventListener('change', event => {
-    HAMMING_ERROR_CORRECTION = event.target.checked;
-    configurationChanged();
-  })
-  document.getElementById('periodic-interleaving').checked = PERIODIC_INTERLEAVING;
-  document.getElementById('periodic-interleaving').addEventListener('change', event => {
-    PERIODIC_INTERLEAVING = event.target.checked;
-    configurationChanged();
-    StreamManager.setSegmentEncoding(
-      PERIODIC_INTERLEAVING ? InterleaverEncoding : undefined
-    );
-  });
   document.getElementById('pause-after-end').addEventListener('change', event => {
     PAUSE_AFTER_END = event.target.checked;
     if(!PAUSE_AFTER_END) resumeGraph();
@@ -178,33 +179,6 @@ function updateFrequencyResolution() {
   document.getElementById('frequency-count').innerText = frequencyCount.toFixed(2);
 }
 
-function showChannelList() {
-  const allChannels = AVAILABLE_FSK;
-  const channelList = document.getElementById('channel-list');
-  channelList.innerHTML = "";
-  allChannels.forEach(([low, high], i) => {
-    const li = document.createElement('li');
-    const label = document.createElement('label');
-    li.appendChild(label);
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = !EXCLUDED_CHANNELS.includes(i);
-    checkbox.addEventListener('input', event => {
-      if(event.target.checked) {
-        EXCLUDED_CHANNELS = EXCLUDED_CHANNELS.filter(channel => channel !== i)
-      } else {
-        EXCLUDED_CHANNELS.push(i);
-      }
-      configurationChanged();
-    })
-    label.append(checkbox);
-    const text = document.createTextNode(`Low: ${low} Hz High: ${high} Hz`);
-    label.append(text);
-    channelList.appendChild(li);
-  })
-  drawChannels();
-}
-
 function handleAudioSenderSend({bits}) {
   SENT_TRANSFER_BITS.push(...bits);
   showSentBits();
@@ -217,7 +191,7 @@ function configurationChanged() {
   updateStreamManager();
   updateAudioSender();
   updateAudioReceiver();
-  showChannelList();
+  drawChannels();
   updateFrequencyResolution();
   updatePacketStats();
 }
@@ -259,7 +233,7 @@ function updateAudioReceiver() {
 }
 function updateStreamManager() {
   StreamManager.setPacketEncoding(
-    HAMMING_ERROR_CORRECTION ? HammingEncoding : undefined
+    packetizationPanel.getErrorCorrection() ? HammingEncoding : undefined
   );
   StreamManager.changeConfiguration({
     bitsPerPacket: PacketUtils.getPacketMaxBitCount(),
@@ -279,16 +253,16 @@ function updateStreamManager() {
 }
 function updatePacketUtils() {
   PacketUtils.setEncoding(
-    HAMMING_ERROR_CORRECTION ? HammingEncoding : undefined
+    packetizationPanel.getErrorCorrection() ? HammingEncoding : undefined
   );
   const bitsPerSegment = USED_FSK.length;
   PacketUtils.changeConfiguration({
     segmentDurationMilliseconds: signalPanel.getSegmentDuration(),
-    packetSizeBitCount: PACKET_SIZE_BITS,
+    packetSizeBitCount: packetizationPanel.getSizePower(),
     dataSizeBitCount: MAXIMUM_PACKETIZATION_SIZE_BITS,
     dataSizeCrcBitCount: CRC_BIT_COUNT,
     bitsPerSegment,
-    packetEncoding: HAMMING_ERROR_CORRECTION,
+    packetEncoding: packetizationPanel.getErrorCorrection(),
     packetEncodingBitCount: ERROR_CORRECTION_BLOCK_SIZE,
     packetDecodingBitCount: ERROR_CORRECTION_DATA_SIZE,
   });
@@ -479,11 +453,11 @@ function showSentBits() {
   document.getElementById('sent-data').innerHTML =
     SENT_ORIGINAL_BITS.reduce(bitReducer(
       PacketUtils.getPacketMaxBitCount(),
-      HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_DATA_SIZE : 8
+      packetizationPanel.getErrorCorrection() ? ERROR_CORRECTION_DATA_SIZE : 8
     ), '');
   
   // error correcting bits
-  if(HAMMING_ERROR_CORRECTION) {
+  if(packetizationPanel.getErrorCorrection()) {
     document.getElementById('error-correcting-data').innerHTML =
     SENT_ENCODED_BITS.reduce(bitReducer(
       PacketUtils.getPacketDataBitCount(),
@@ -506,7 +480,7 @@ function sendPacket(bits, packetStartSeconds) {
   const segmentDurationSeconds = PacketUtils.getSegmentDurationSeconds();
   for(let i = 0; i < bitCount; i += channelCount) {
     let segmentBits = bits.slice(i, i + channelCount);
-    if(PERIODIC_INTERLEAVING) {
+    if(packetizationPanel.getInterleaving()) {
       segmentBits = InterleaverEncoding.encode(segmentBits);
     }
     const segmentIndex = Math.floor(i / channelCount);
@@ -558,7 +532,7 @@ function getTransferredCorrectedBits() {
   const packetCount = StreamManager.getPacketReceivedCount();
   for(let packetIndex = 0; packetIndex < packetCount; packetIndex++) {
     let packetBits = StreamManager.getPacketBits(packetIndex);
-    if(HAMMING_ERROR_CORRECTION) {
+    if(packetizationPanel.getErrorCorrection()) {
       bits.push(...HammingEncoding.decode(packetBits));
     } else {
       bits.push(...packetBits);
@@ -613,7 +587,7 @@ function handleStreamManagerChange() {
         (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
       ),
     ''));
-    if(HAMMING_ERROR_CORRECTION) {
+    if(packetizationPanel.getErrorCorrection()) {
       document.getElementById('received-encoded-bits').innerHTML = allEncodedBits
       .reduce(
         bitExpectorReducer(
@@ -630,7 +604,7 @@ function handleStreamManagerChange() {
       bitExpectorReducer(
         SENT_ORIGINAL_BITS,
         PacketUtils.getPacketDataBitCount(),
-        HAMMING_ERROR_CORRECTION ? ERROR_CORRECTION_DATA_SIZE : 8
+        packetizationPanel.getErrorCorrection() ? ERROR_CORRECTION_DATA_SIZE : 8
       ),
     '');
   document.getElementById('received-packet-original-bytes').innerText = transmissionByteCount.toLocaleString();
@@ -693,7 +667,7 @@ function removeEncodedPadding(bits) {
   let bitsNeeded = sizeBits;
   let blocksNeeded = sizeBits;
   // need to calc max bits
-  if(HAMMING_ERROR_CORRECTION) {
+  if(packetizationPanel.getErrorCorrection()) {
     blocksNeeded = Math.ceil(sizeBits / dataSize);
     bitsNeeded = blocksNeeded * blockSize;
   }
@@ -708,7 +682,7 @@ function removeEncodedPadding(bits) {
   // determine how many decoded bits need to be sent (including the size)
   const totalBits = (dataByteCount * 8) + MAXIMUM_PACKETIZATION_SIZE_BITS + CRC_BIT_COUNT;
   let encodingBitCount = totalBits;
-  if(HAMMING_ERROR_CORRECTION) {
+  if(packetizationPanel.getErrorCorrection()) {
     const blocks = Math.ceil(encodingBitCount / dataSize);
     encodingBitCount = blocks * blockSize;
   }
@@ -803,6 +777,8 @@ function resetGraphData() {
 function getAudioContext() {
   if(!audioContext) {
     audioContext = new (window.AudioContext || webkitAudioContext)();
+    frequencyPanel.setSampleRate(audioContext.sampleRate);
+    availableFskPairsPanel.setSampleRate(audioContext.sampleRate);
   }
   if(audioContext.state === 'suspended') {
     audioContext.resume();

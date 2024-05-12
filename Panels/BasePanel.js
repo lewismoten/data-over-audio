@@ -65,6 +65,20 @@ class BasePanel {
     this.append(select);
   }
   addCheckedInputs = (type, name, items, value) => {
+    const div = document.createElement('div');
+    div.id = this.childId(name);
+    this.createCheckedInputs(type, name, items, value)
+      .forEach(element => div.appendChild(element));
+    this.append(div);
+  }
+  replaceCheckedInputs = (type, name, items, value) => {
+    const div = this.getElement(name);
+    div.innerHTML = '';
+    this.createCheckedInputs(type, name, items, value)
+      .forEach(element => div.appendChild(element));
+  }
+  createCheckedInputs = (type, name, items, value) => {
+    const elements = [];
     items.forEach(({id, text, checked = false, eventName = 'change'})=> {
       const label = document.createElement('label');
       label.for = this.childId(id);
@@ -72,9 +86,10 @@ class BasePanel {
       label.appendChild(input);
       const textNode = document.createTextNode(text);
       label.append(textNode);
-      this.append(label);
-      this.addNewLine();
+      elements.push(label);
+      elements.push(document.createElement('br'));
     });
+    return elements;
   }
   addInputText = (id, value, options = {}) => {
     this.append(this.createInput(id, value, {...options, type: 'text'}));

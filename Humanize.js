@@ -9,6 +9,17 @@ export function byteSize(count) {
   count = Math.floor(count * 10) * 0.1
   return `${count.toLocaleString()} ${units[unitIndex]}`
 }
+export function hertz(hz) {
+  let unitIndex = 0;
+  const units = ['Hz', 'kHz', 'mHz', 'gHz', 'tHz', 'pHz'];
+  while(hz >= 1000) {
+    hz /= 1000;
+    unitIndex++;
+    if(unitIndex === units.length - 1) break;
+  }
+  hz = Math.floor(hz * 1000) * 0.001
+  return `${hz.toLocaleString()} ${units[unitIndex]}`
+}
 export function bitsPerSecond(bps) {
   let unitIndex = 0;
   const units = ['baud', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps'];
