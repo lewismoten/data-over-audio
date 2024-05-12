@@ -21,8 +21,6 @@ var microphoneStream;
 var microphoneNode;
 var analyser;
 var sentDataTextArea;
-var receivedGraph;
-var receivedData = [];
 const MAXIMUM_PACKETIZATION_SIZE_BITS = 16;
 const CRC_BIT_COUNT = 8;
 
@@ -33,8 +31,6 @@ let SENT_ENCODED_BITS = []; // bits with error encoding
 let SENT_TRANSFER_BITS = []; // bits sent in the transfer
 
 let EXCLUDED_CHANNELS = [];
-
-var MAX_BITS_DISPLAYED_ON_GRAPH = 79;
 
 const ERROR_CORRECTION_BLOCK_SIZE = 7;
 const ERROR_CORRECTION_DATA_SIZE = 4;
@@ -182,17 +178,12 @@ function handleWindowLoad() {
   StreamManager.addEventListener('change', handleStreamManagerChange);
 
   // grab dom elements
-  receivedGraph = document.getElementById('received-graph');
   sentDataTextArea = document.getElementById('sent-data');
   const receivedChannelGraph = document.getElementById('received-channel-graph');
   receivedChannelGraph.addEventListener('mouseover', handleReceivedChannelGraphMouseover);
   receivedChannelGraph.addEventListener('mouseout', handleReceivedChannelGraphMouseout);
   receivedChannelGraph.addEventListener('mousemove', handleReceivedChannelGraphMousemove);
   receivedChannelGraph.addEventListener('click', handleReceivedChannelGraphClick);
-  document.getElementById('max-bits-displayed-on-graph').value= MAX_BITS_DISPLAYED_ON_GRAPH;
-  document.getElementById('max-bits-displayed-on-graph').addEventListener('input', (event) => {
-    MAX_BITS_DISPLAYED_ON_GRAPH = parseInt(event.target.value);
-  })
   document.getElementById('audio-context-sample-rate').innerText = getAudioContext().sampleRate.toLocaleString();
   // wire up events
   configurationChanged();
@@ -910,206 +901,6 @@ function handleChangeListening({checked}) {
     }
   }
 }
-function drawSegmentIndexes(ctx, width, height) {
-  // Do/did we have a stream?
-  if(!RECEIVED_STREAM_START_MS) return;
-  const latest = SAMPLES[0].time;
-
-  // will any of the stream appear?
-  const segmentCount = PacketUtils.getPacketSegmentCount();
-  const transferDuration = parseDataTransferDurationMilliseconds();
-  const lastStreamEnded = RECEIVED_STREAM_START_MS + transferDuration;
-
-  const graphDuration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
-  const graphEarliest = latest - graphDuration;
-  // ended too long ago?
-  if(lastStreamEnded < graphEarliest) return;
-
-  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
-
-  const latestSegmentEnded = Math.min(latest, lastStreamEnded);
-
-  for(let time = latestSegmentEnded; time > graphEarliest; time -= signalPanel.getSegmentDuration()) {
-    // too far back?
-    if(time < RECEIVED_STREAM_START_MS) break;
-
-    const transferSegmentIndex = PacketUtils.getTranserSegmentIndex(RECEIVED_STREAM_START_MS, time);
-    const packetIndex = PacketUtils.getPacketIndex(RECEIVED_STREAM_START_MS, time);
-    const packetSegmentIndex = PacketUtils.getPacketSegmentIndex(RECEIVED_STREAM_START_MS, time);
-    const packetStarted = PacketUtils.getPacketStartMilliseconds(RECEIVED_STREAM_START_MS, packetIndex);
-    const segmentStart = PacketUtils.getPacketSegmentStartMilliseconds(RECEIVED_STREAM_START_MS, packetIndex, packetSegmentIndex);
-    const segmentEnd = PacketUtils.getPacketSegmentEndMilliseconds(RECEIVED_STREAM_START_MS, packetIndex, packetSegmentIndex);
-
-    // where is the segments left x coordinate?
-    const leftX = ((latest - segmentEnd) / graphDuration) * width;
-
-    // Draw segment index
-    ctx.fontSize = '24px';
-    if(segmentStart < lastStreamEnded) {
-      let text = packetSegmentIndex.toString();
-      let size = ctx.measureText(text);
-      let textX = leftX + (segmentWidth / 2) - (size.width / 2);
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 2;
-      ctx.textBaseline = 'bottom';
-      let textY = transferSegmentIndex % 2 === 0 ? height : height - 12;
-      ctx.strokeText(text, textX, textY);
-      ctx.fillStyle = 'white';
-      ctx.fillText(text, textX, textY);
-    }
-
-    // draw sample count
-    const sampleCount = SAMPLES
-      .filter(fot => 
-        fot.streamStarted === packetStarted && 
-        fot.segmentIndex === packetSegmentIndex &&
-        fot.packetIndex === packetIndex
-      )
-      .length;
-    // if(sampleCount === 0) {
-    //   console.log({
-    //     packetStarted,
-    //     packetSegmentIndex,
-    //     packetIndex,
-    //     startTimes: SAMPLES.reduce((all, fot) => all.includes(fot.streamStarted) ? all : [...all, fot.streamStarted], [])
-    //   })
-    // }
-
-    let text = sampleCount.toString();
-    let size = ctx.measureText(text);
-    let textX = leftX + (segmentWidth / 2) - (size.width / 2);
-    let textY = transferSegmentIndex % 2 === 0 ? 5 : 17;
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 2;
-    ctx.textBaseline = 'top';
-    ctx.strokeText(text, textX, textY);
-    if(sampleCount === 0) ctx.fillStyle = 'red';
-    else if(sampleCount < 3) ctx.fillStyle = 'yellow';
-    else ctx.fillStyle = 'white';
-    ctx.fillText(text, textX, textY);
-  }
-}
-function drawBitDurationLines(ctx, color) {
-  const { width, height } = receivedGraph;
-  const newest = SAMPLES[0].time;
-  const duration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
-
-  const streamTimes = SAMPLES.filter(({
-    streamStarted
-  }) => {
-    return streamStarted !== -1
-  }).reduce((unique, {
-    streamStarted,
-    streamEnded = newest
-  }) => {
-    if(unique.every(u => u.streamStarted != streamStarted)) {
-      unique.push({streamStarted, streamEnded})
-    }
-    return unique;
-  }, []);
-
-  ctx.strokeStyle = color;
-  streamTimes.forEach(({ streamStarted, streamEnded = newest}) => {
-    for(let time = streamStarted; time < streamEnded; time += signalPanel.getSegmentDuration()) {
-      if(newest - time > duration) continue;
-      const x = ((newest - time) / duration) * width;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();  
-    }
-    // write end as well
-    const x = ((newest - streamEnded) / duration) * width;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();  
-});
-}
-
-function drawBitStart(ctx, color) {
-  const { width, height } = receivedGraph;
-  const newest = SAMPLES[0].time;
-  const duration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
-  ctx.strokeStyle = color;
-  for(let i = 0; i < bitStart.length; i++) {
-    if(!bitStart[i]) continue;
-    const {time} = SAMPLES[i];
-    if(newest - time > duration) continue;
-    const x = ((newest - time) / duration) * width;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-}
-function getPercentY(percent) {
-  const { height } = receivedGraph;
-  return (1 - percent) * height;
-}
-function drawFrequencyLineGraph(ctx, channel, highLowIndex, color, lineWidth, dashed) {
-  const { width, height } = receivedGraph;
-  const newest = SAMPLES[0].time;
-  const duration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
-  const isSelected = channel === CHANNEL_SELECTED;
-  const isOver = channel === CHANNEL_OVER;
-  if(dashed) {
-    ctx.setLineDash([5, 5]);
-  }
-  ctx.beginPath();
-  for(let i = 0; i < SAMPLES.length; i++) {
-    const {pairs, time} = SAMPLES[i];
-    const x = getTimeX(time, newest);
-    if(x === -1) continue;
-    if(channel >= pairs.length) continue;
-    const amplitude = pairs[channel][highLowIndex];
-    const y = getPercentY(amplitude / 300);
-    if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  if(isSelected || isOver) {
-    ctx.lineWidth = lineWidth + 5;
-    ctx.strokeStyle = 'white';
-    ctx.stroke();
-  }
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lineWidth;
-  ctx.stroke();
-  if(dashed) {
-    ctx.setLineDash([]);
-  }
-}
-function drawFrequencyDots(ctx, channel, highLowIndex, color) {
-  const newest = SAMPLES[0].time;
-  const radius = 2;
-  const border = 0.5;
-  ctx.fillStyle = color;
-  ctx.strokeStyle = 'white';
-  ctx.lineWidth = border;
-  const fullCircle = 2 * Math.PI;
-  for(let i = 0; i < SAMPLES.length; i++) {
-    const {pairs, time} = SAMPLES[i];
-    const x = getTimeX(time, newest);
-    if(x === -1) continue;
-    const amplitude = pairs[channel][highLowIndex];
-    const y = getPercentY(amplitude / 300);
-
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, fullCircle);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(x, y, radius + border, 0, fullCircle);
-    ctx.stroke();
-  }
-}
-function getTimeX(time, newest) {
-  return getTimePercent(time, newest) * receivedGraph.width;
-}
-function getTimePercent(time, newest) {
-  const duration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
-  if(newest - time > duration) return -1;
-  return ((newest - time) / duration);
-}
 
 function drawChannelData() {
   // Do/did we have a stream?
@@ -1122,7 +913,7 @@ function drawChannelData() {
 
   const packetDuration = PacketUtils.getPacketDurationMilliseconds();
   const lastStreamEnded = RECEIVED_STREAM_START_MS + packetDuration;
-  const graphDuration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const graphDuration = graphConfigurationPanel.getDurationMilliseconds();
   const graphEarliest = latest - graphDuration;
   // ended too long ago?
   if(lastStreamEnded < graphEarliest) return;
@@ -1225,7 +1016,7 @@ function drawSegmentBackground(
   width,
   height
 ) {
-  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
 
   const hue = 120;
   let luminance = segmentIndex % 2 === 0 ? 30 : 25;
@@ -1246,7 +1037,7 @@ function drawChannelSegmentForeground(
   expectedBit
 ) {
   const channelHeight = height / channelCount;
-  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
   let top = channelHeight * channelIndex;
   ctx.font = `${fontHeight}px Arial`;
@@ -1286,7 +1077,7 @@ function drawChannelSegmentBackground(
   if(isSelectedOrOver) luminance += 15;
 
   const channelHeight = height / channelCount;
-  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
   let top = channelHeight * channelIndex;
   ctx.fillStyle = `hsl(${hue}, 100%, ${luminance}%)`;
   ctx.fillRect(endX, top, segmentWidth, channelHeight);
@@ -1323,7 +1114,7 @@ function drawChannelNumbers(ctx, channelCount, width, height) {
   const offset = 0;
   const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelHeight = height / channelCount;
-  const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
   ctx.font = `${fontHeight}px Arial`;
   ctx.textBaseline = 'middle';
@@ -1356,78 +1147,11 @@ function drawFrequencyData(forcedDraw) {
     return;
   }
   drawChannelData();
-  const ctx = receivedGraph.getContext('2d');
-  const { width, height } = receivedGraph;
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, width, height);
-  
-  const thresholdY = (1 - ((signalPanel.getAmplitudeThreshold() * 255)/300)) * height;
-  ctx.strokeStyle = 'grey';
-  ctx.beginPath();
-  ctx.moveTo(0, thresholdY);
-  ctx.lineTo(width, thresholdY);
-  ctx.stroke();
-  drawBitDurationLines(ctx, 'rgba(255, 255, 0, .25)');
-  drawBitStart(ctx, 'green');
-  const frequencies = availableFskPairsPanel.getSelectedFskPairs();
-  const high = 1;
-  const low = 0
-  const isSelectedOrOver = CHANNEL_OVER !== -1 || CHANNEL_SELECTED !== -1;
-  const highLuminance = isSelectedOrOver ? 25 : 50;
-  const lowLuminance = isSelectedOrOver ? 12 : 25;
-  frequencies.forEach((v, channel) => {
-    // const hue = channelHue(channel, frequencies.length);
-    const lowHue = hzHue(v[0]);
-    const highHue = hzHue(v[1]);
-    drawFrequencyLineGraph(ctx, channel, high, `hsl(${highHue}, 100%, ${highLuminance}%)`, 2, false);
-    drawFrequencyLineGraph(ctx, channel, low, `hsl(${lowHue}, 100%, ${lowLuminance}%)`, 1, true);
-  });
-  if(CHANNEL_OVER !== -1) {
-    // const hue = channelHue(CHANNEL_OVER, frequencies.length);
-    const lowHue = hzHue(frequencies[CHANNEL_OVER][0]);
-    const highHue = hzHue(frequencies[CHANNEL_OVER][1]);
-    drawFrequencyLineGraph(ctx, CHANNEL_OVER, high, `hsl(${highHue}, 100%, 50%)`, 2, false);
-    drawFrequencyLineGraph(ctx, CHANNEL_OVER, low, `hsl(${lowHue}, 100%, 25%)`, 1, true);
-  } else if(CHANNEL_SELECTED !== -1) {
-    const lowHue = hzHue(frequencies[CHANNEL_SELECTED][0]);
-    const highHue = hzHue(frequencies[CHANNEL_SELECTED][1]);
-    // const hue = channelHue(CHANNEL_SELECTED, frequencies.length);
-    drawFrequencyLineGraph(ctx, CHANNEL_SELECTED, high, `hsl(${highHue}, 100%, 50%)`, 2, false);
-    drawFrequencyLineGraph(ctx, CHANNEL_SELECTED, low, `hsl(${lowHue}, 100%, 25%)`, 1, true);
-  }
-
-  drawSegmentIndexes(ctx, width, height);
-
   requestAnimationFrame(drawFrequencyData);
 }
 
-function channelHue(channelId, channelCount) {
-  return Math.floor((channelId / channelCount) * 360);
-}
 function hzHue(hz) {
   return Math.floor((hz / 20000) * 360);
-}
-
-function drawReceivedData() {
-  const ctx = receivedGraph.getContext('2d');
-  const { width, height } = receivedGraph;
-  const segmentWidth = (1 / MAX_BITS_DISPLAYED_ON_GRAPH) * width;
-  ctx.clearRect(0, 0, width, height);
-  const sorted = receivedData.slice().sort((a, b) => a - b);
-  const min = sorted[0];
-  const max = sorted[sorted.length - 1];
-  const range = max - min;
-  ctx.beginPath();
-  for(let i = 0; i < MAX_BITS_DISPLAYED_ON_GRAPH && i < receivedData.length; i++) {
-    const value = receivedData[i];
-    const y = (1-(value / range)) * height;
-    if(i === 0) {
-      ctx.moveTo(0, y);
-    } else {
-      ctx.lineTo(segmentWidth * i, y)
-    }
-  }
-  ctx.stroke();
 }
 
 function handleReceivedChannelGraphMouseover(e) {
@@ -1583,7 +1307,7 @@ function getChannelAndSegment(e) {
   // will any of the stream appear?
   const packetDuration = PacketUtils.getPacketDurationMilliseconds();
   const lastStreamEnded = RECEIVED_STREAM_START_MS + packetDuration;
-  const graphDuration = signalPanel.getSegmentDuration() * MAX_BITS_DISPLAYED_ON_GRAPH;
+  const graphDuration = graphConfigurationPanel.getDurationMilliseconds();
   const graphEarliest = latest - graphDuration;
     // ended too long ago?
     if(lastStreamEnded < graphEarliest) {
@@ -1593,7 +1317,7 @@ function getChannelAndSegment(e) {
       };
     }
   
-    const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
+    const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
   
     const latestSegmentEnded = Math.min(latest, lastStreamEnded);
   

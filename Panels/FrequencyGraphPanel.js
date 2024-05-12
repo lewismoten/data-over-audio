@@ -18,7 +18,7 @@ class FrequencyGraphPanel extends BasePanel {
   };
   setDurationMilliseconds = (millseconds) => {
     this.duration = millseconds;
-    this.draw(false);
+    if(!this.isRunning()) this.draw();
   }
   setSignalStart = milliseconds => {
     this.signalStart = milliseconds;
@@ -30,12 +30,14 @@ class FrequencyGraphPanel extends BasePanel {
 
   setAmplitudeThreshold = value => {
     this.amplitudeThreshold = value;
+    if(!this.isRunning()) this.draw();
   }
   setSampleRate = (value) => {
     this.sampleRate = value;
   }
   setFskPairs = fskPairs => {
     this.fskPairs = fskPairs;
+    if(!this.isRunning()) this.draw();
   }
   setAnalyser = (analyser) => {
     this.analyser = analyser;
@@ -185,7 +187,7 @@ class FrequencyGraphPanel extends BasePanel {
       }
 
       // sample counts
-      this.drawSampleCount(ctx, width, height, time, end, leftX, samplePeriodWidth);
+      this.drawSampleCount(ctx, time, end, leftX, samplePeriodWidth);
     }
 
     this.drawSignalStart(ctx, width, height, now);
@@ -195,7 +197,7 @@ class FrequencyGraphPanel extends BasePanel {
       this.animationFrameId = requestAnimationFrame(this.draw);
     }
   }
-  drawSampleCount = (ctx, width, height, start, end, leftX, samplePeriodWidth) => {
+  drawSampleCount = (ctx, start, end, leftX, samplePeriodWidth) => {
     const count = this.samples.filter(sample => {
       return sample.time >= start && sample.time <  end;
     }).length;

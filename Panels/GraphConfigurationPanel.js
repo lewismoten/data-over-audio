@@ -7,7 +7,7 @@ class GraphConfigurationPanel extends BasePanel {
       {text: 'Pause after signal ends', id: 'pause-after-end', eventName: 'pauseAfterEndChange'}
     ])
     this.openField('Duration');
-    this.addInputNumber('duration', 1, {min: 0.03, step: 0.001, eventName: 'durationChange'});
+    this.addInputNumber('duration', 1, {min: 0.03, max: 10, step: 0.001, eventName: 'durationChange'});
     this.addText('s');
     this.closeField();
   };
