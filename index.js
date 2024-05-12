@@ -16,6 +16,7 @@ import PacketizationPanel from "./Panels/PacketizationPanel";
 import AvailableFskPairsPanel from "./Panels/AvailableFskPairsPanel";
 import FrequencyGraphPanel from "./Panels/FrequencyGraphPanel";
 import GraphConfigurationPanel from './Panels/GraphConfigurationPanel'
+import SpeedPanel from './Panels/SpeedPanel';
 import {
   bitsToInt,
   bitsToBytes,
@@ -66,9 +67,11 @@ const packetizationPanel = new PacketizationPanel();
 const availableFskPairsPanel = new AvailableFskPairsPanel();
 const frequencyGraphPanel = new FrequencyGraphPanel();
 const graphConfigurationPanel = new GraphConfigurationPanel();
+const speedPanel = new SpeedPanel();
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
+  panelContainer.prepend(speedPanel.getDomElement());
   panelContainer.prepend(graphConfigurationPanel.getDomElement());
   panelContainer.prepend(frequencyGraphPanel.getDomElement());
   panelContainer.prepend(availableFskPairsPanel.getDomElement());
@@ -122,6 +125,12 @@ function handleWindowLoad() {
   frequencyGraphPanel.setAmplitudeThreshold(signalPanel.getAmplitudeThreshold());
   frequencyGraphPanel.setDurationMilliseconds(graphConfigurationPanel.getDurationMilliseconds());
 
+  speedPanel.setMaximumPackets(0);
+  speedPanel.setMaximumDurationMilliseconds(0);
+  speedPanel.setDataBitsPerSecond(0);
+  speedPanel.setPacketizationBitsPerSecond(0);
+  speedPanel.setTransferDurationMilliseconds(0);
+
   AudioReceiver.setTimeoutMilliseconds(signalPanel.getTimeoutMilliseconds());
 
 
@@ -173,6 +182,7 @@ function handleWindowLoad() {
 
   availableFskPairsPanel.addEventListener('change', (event) => {
     frequencyGraphPanel.setFskPairs(event.selected);
+    configurationChanged();
   });
   graphConfigurationPanel.addEventListener('pauseAfterEndChange', (event) => {
     if(!frequencyGraphPanel.isRunning()) {
@@ -309,20 +319,20 @@ function updatePacketUtils() {
     packetEncodingBitCount: ERROR_CORRECTION_BLOCK_SIZE,
     packetDecodingBitCount: ERROR_CORRECTION_DATA_SIZE,
   });
+  speedPanel.setMaximumPackets(PacketUtils.getMaxPackets());
+  speedPanel.setMaximumDurationMilliseconds(PacketUtils.getMaxDurationMilliseconds());
+  speedPanel.setDataBitsPerSecond(PacketUtils.getEffectiveBaud());
+  speedPanel.setPacketizationBitsPerSecond(PacketUtils.getBaud());
+  speedPanel.setTransferDurationMilliseconds(PacketUtils.getDataTransferDurationMillisecondsFromByteCount(
+    textToBytes(messagePanel.getMessage()).length
+  ));
+
 }
 function updatePacketStats() {
   const text = messagePanel.getMessage();
   const bits = textToBits(text);
   const byteCount = text.length;
   const bitCount = PacketUtils.getPacketizationBitCountFromBitCount(bits.length);;
-
-  // # Packetization
-  document.getElementById('packetization-max-bytes').innerText = Humanize.byteSize(PacketUtils.getDataMaxByteCount());
-  document.getElementById('packetization-max-packets').innerText = PacketUtils.getMaxPackets().toLocaleString();
-  document.getElementById('packetization-max-duration').innerText = Humanize.durationMilliseconds(PacketUtils.getMaxDurationMilliseconds());
-  // ## Packetization Speed
-  document.getElementById('packetization-speed-bits-per-second').innerText = Humanize.bitsPerSecond(PacketUtils.getBaud());
-  document.getElementById('packetization-speed-effective-bits-per-second').innerText = Humanize.bitsPerSecond(PacketUtils.getEffectiveBaud());
 
   // Data
   document.getElementById('original-byte-count').innerText = textToBytes(text).length.toLocaleString();
@@ -345,9 +355,6 @@ function updatePacketStats() {
   document.getElementById('packet-unused-bit-count').innerText = PacketUtils.getPacketUnusedBitCount().toLocaleString();
   document.getElementById('last-packet-unused-bit-count').innerText = PacketUtils.fromByteCountGetPacketLastUnusedBitCount(byteCount).toLocaleString();
   document.getElementById('last-segment-unused-bit-count').innerText = PacketUtils.getPacketLastSegmentUnusedBitCount().toLocaleString()
-  document.getElementById('packet-transfer-duration').innerText = Humanize.durationMilliseconds(PacketUtils.getPacketDurationMilliseconds());
-  document.getElementById('segment-transfer-duration').innerText = Humanize.durationMilliseconds(PacketUtils.getSegmentDurationMilliseconds());
-  document.getElementById('data-transfer-duration').innerText = Humanize.durationMilliseconds(PacketUtils.getDataTransferDurationMilliseconds(bitCount));
   document.getElementById('segments-per-packet').innerText = PacketUtils.getPacketSegmentCount().toLocaleString();
   frequencyGraphPanel.setSamplePeriodsPerGroup(PacketUtils.getPacketSegmentCount());
   document.getElementById('total-segments').innerText = getTotalSegmentCount(bitCount).toLocaleString();

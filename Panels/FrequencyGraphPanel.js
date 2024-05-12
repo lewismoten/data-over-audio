@@ -104,7 +104,7 @@ class FrequencyGraphPanel extends BasePanel {
   }
 
   draw = () => {
-    const maxAmps = 280; // inflated for height
+    const maxAmps = 290; // inflated for height
     const ultimateFrequency = this.sampleRate / 2;
     const canvas = this.getElement('frequency-graph');
     const ctx = canvas.getContext('2d');
@@ -166,7 +166,7 @@ class FrequencyGraphPanel extends BasePanel {
       ctx.beginPath();
       ctx.moveTo(rightX, 0);
       ctx.lineTo(rightX, height);
-      ctx.strokeStyle = 'hsla(120, 100%, 100%, 50%)';
+      ctx.strokeStyle = 'hsla(120, 100%, 100%, 10%)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
@@ -193,7 +193,7 @@ class FrequencyGraphPanel extends BasePanel {
         let size = ctx.measureText(text);
         let textX = leftX + (samplePeriodWidth / 2) - (size.width / 2);
         // far enough from prior text?
-        if(textX - lastTextX > size.width) {
+        if(textX - lastTextX > (size.width * 2)) {
           lastTextX = textX;
           ctx.lineWidth = 2;
           ctx.textBaseline = 'bottom';
@@ -226,11 +226,11 @@ class FrequencyGraphPanel extends BasePanel {
     let textX = leftX + (samplePeriodWidth / 2) - (size.width / 2);
 
     // far enough from prior text?
-    if(textX - this.lastCountX > size.width) {
+    if(textX - this.lastCountX > (size.width * 2)) {
       this.lastCountX = textX;
       ctx.lineWidth = 2;
       ctx.textBaseline = 'bottom';
-      let textY = 20;
+      let textY = 10;
       ctx.strokeStyle = 'black';
       ctx.strokeText(text, textX, textY);
       if(count === 0) {

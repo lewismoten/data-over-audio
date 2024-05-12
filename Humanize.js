@@ -1,4 +1,5 @@
 export function byteSize(count) {
+  if(count === 0) return 'none';
   let unitIndex = 0;
   const units = ['bytes', 'kb', 'mb', 'gb', 'tb', 'pb'];
   while(count > 999) {
@@ -10,6 +11,7 @@ export function byteSize(count) {
   return `${count.toLocaleString()} ${units[unitIndex]}`
 }
 export function hertz(hz) {
+  if(hz === 0) return 'none';
   let unitIndex = 0;
   const units = ['Hz', 'kHz', 'mHz', 'gHz', 'tHz', 'pHz'];
   while(hz >= 1000) {
@@ -21,6 +23,7 @@ export function hertz(hz) {
   return `${hz.toLocaleString()} ${units[unitIndex]}`
 }
 export function bitsPerSecond(bps) {
+  if(bps === 0) return 'none';
   let unitIndex = 0;
   const units = ['baud', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps'];
   while(bps > 999) {
@@ -32,6 +35,7 @@ export function bitsPerSecond(bps) {
   return `${bps.toLocaleString()} ${units[unitIndex]}`
 }
 export function durationMilliseconds(milliseconds) {
+  if(milliseconds === 0) return 'none';
   const lookup = [
     {mod: 1000, singular: 'ms', plural: 'ms'},
     {mod: 60, singular: 's', plural: 's'},
