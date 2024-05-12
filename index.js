@@ -16,13 +16,23 @@ import PacketizationPanel from "./Panels/PacketizationPanel";
 import AvailableFskPairsPanel from "./Panels/AvailableFskPairsPanel";
 import FrequencyGraphPanel from "./Panels/FrequencyGraphPanel";
 import GraphConfigurationPanel from './Panels/GraphConfigurationPanel'
+import {
+  bitsToInt,
+  bitsToBytes,
+  bitsToText,
+  bytesToBits,
+  bytesToText,
+  numberToBytes,
+  numberToBits,
+  numberToHex,
+  textToBits,
+  textToBytes,
+} from './converters';
 var audioContext;
 var microphoneStream;
 var microphoneNode;
 var analyser;
 var sentDataTextArea;
-const MAXIMUM_PACKETIZATION_SIZE_BITS = 16;
-const CRC_BIT_COUNT = 8;
 
 // bits as they are sent
 let SENT_ORIGINAL_TEXT = '';
@@ -96,6 +106,10 @@ function handleWindowLoad() {
   signalPanel.setTimeoutMilliseconds(60);
 
   packetizationPanel.setSizePower(5);
+  packetizationPanel.setDataSizePower(16);
+  packetizationPanel.setDataSizeCrc(8);
+  packetizationPanel.setDataCrc(16);
+
   packetizationPanel.setErrorCorrection(true);
   packetizationPanel.setInterleaving(true);
 
@@ -153,6 +167,9 @@ function handleWindowLoad() {
     configurationChanged();
   });
   packetizationPanel.addEventListener('errorCorrectionChange', configurationChanged);
+  packetizationPanel.addEventListener('dataSizePowerChange', configurationChanged);
+  packetizationPanel.addEventListener('dataSizeCrcChange', configurationChanged);
+  packetizationPanel.addEventListener('dataCrcChange', configurationChanged);
 
   availableFskPairsPanel.addEventListener('change', (event) => {
     frequencyGraphPanel.setFskPairs(event.selected);
@@ -252,6 +269,10 @@ function updateStreamManager() {
   StreamManager.setPacketEncoding(
     packetizationPanel.getErrorCorrection() ? HammingEncoding : undefined
   );
+  const xferCountLength = packetizationPanel.getDataSizePower();
+  const xferCountCrcLength = xferCountLength === 0 ? 0 : packetizationPanel.getDataSizeCrc();
+  const xferCrcLength = packetizationPanel.getDataCrc();
+
   StreamManager.changeConfiguration({
     bitsPerPacket: PacketUtils.getPacketMaxBitCount(),
     segmentsPerPacket: PacketUtils.getPacketSegmentCount(),
@@ -259,11 +280,15 @@ function updateStreamManager() {
     streamHeaders: {
       'transfer byte count': {
         index: 0,
-        length: MAXIMUM_PACKETIZATION_SIZE_BITS
+        length: xferCountLength
       },
       'transfer byte count crc': {
-        index: MAXIMUM_PACKETIZATION_SIZE_BITS,
-        length: CRC_BIT_COUNT
+        index:  xferCountLength,
+        length: xferCountCrcLength
+      },
+      'transfer byte crc': {
+        index:  xferCountLength + xferCountCrcLength,
+        length: xferCrcLength
       },
     }
   });
@@ -276,8 +301,9 @@ function updatePacketUtils() {
   PacketUtils.changeConfiguration({
     segmentDurationMilliseconds: signalPanel.getSegmentDurationMilliseconds(),
     packetSizeBitCount: packetizationPanel.getSizePower(),
-    dataSizeBitCount: MAXIMUM_PACKETIZATION_SIZE_BITS,
-    dataSizeCrcBitCount: CRC_BIT_COUNT,
+    dataSizeBitCount: packetizationPanel.getDataSizePower(),
+    dataSizeCrcBitCount: packetizationPanel.getDataSizeCrc(),
+    dataCrcBitCount: packetizationPanel.getDataCrc(),
     bitsPerSegment,
     packetEncoding: packetizationPanel.getErrorCorrection(),
     packetEncodingBitCount: ERROR_CORRECTION_BLOCK_SIZE,
@@ -375,21 +401,19 @@ function percentInFrequency(hz, frequencyResolution) {
   return percent;
 }
 
-function logSent(text) {
-  // display what is being sent
-  sentDataTextArea.value += text + '\n';
-  sentDataTextArea.scrollTop = sentDataTextArea.scrollHeight;
-}
-
 function sendBytes(bytes) {
   const byteCount = bytes.length;
   if(byteCount === 0) {
-    logSent('Nothing to send!');
+    document.getElementById('sent-data').innerText = 'Nothing to send!';
     return;
-  } else if(byteCount > 0xFFFF) {
-    logSent('Too much to send!');
+  } else if(byteCount > packetizationPanel.getDataSize()) {
+    document.getElementById('sent-data').innerText = `Attempted to send too much data. Limit is ${Humanize.byteSize(packetizationPanel.getDataSize())}. Tried to send ${Humanize.byteSize(byteCount)}`;
     return;
   }
+
+  AudioReceiver.reset();
+  StreamManager.reset();
+  frequencyGraphPanel.start();
 
   const bits = bytesToBits(bytes);
 
@@ -398,12 +422,44 @@ function sendBytes(bytes) {
 
   // packetization headers
   // data length
-  const dataLengthBits = numberToBits(bytes.length, MAXIMUM_PACKETIZATION_SIZE_BITS);
-  // crc on data length
-  const dataLengthCrcBits = numberToBits(CRC.check(bitsToBytes(dataLengthBits), CRC_BIT_COUNT), CRC_BIT_COUNT);
+  let dataLengthBits = [];
+  let dataLengthCrcBits = [];
+  let dataSizeCrcNumber = 0;
+  const dataLengthBitLength = packetizationPanel.getDataSizePower();
+  if(dataLengthBitLength !== 0) {
+    dataLengthBits = numberToBits(bytes.length, dataLengthBitLength);
+
+    // crc on data length
+    const dataSizeCrcBitLength = packetizationPanel.getDataSizeCrc();
+    if(dataSizeCrcBitLength !== 0) {
+      const bytes = bitsToBytes(dataLengthBits);
+      dataSizeCrcNumber = CRC.check(bytes, dataSizeCrcBitLength);
+      dataLengthCrcBits = numberToBits(dataSizeCrcNumber, dataSizeCrcBitLength);
+    }
+  } 
+
+  // crc on data
+  let dataCrcBits = [];
+  const dataCrcBitLength = packetizationPanel.getDataCrc();
+  let dataCrcNumber = 0;
+  if(dataCrcBitLength !== 0) {
+    dataCrcNumber = CRC.check(bytes, dataCrcBitLength);
+    dataCrcBits = numberToBits(dataCrcNumber, dataCrcBitLength);
+  } 
+  console.log('sending headers', {
+    // dataLengthBits,
+    // dataLengthCrcBits,
+    // dataCrcBits,
+    dataCrcHex: numberToHex(packetizationPanel.getDataCrc())(dataCrcNumber),
+    dataSizeCrcHex: numberToHex(packetizationPanel.getDataSizeCrc())(dataSizeCrcNumber),
+  })
 
   // prefix with headers
-  bits.unshift(...dataLengthBits, ...dataLengthCrcBits);
+  bits.unshift(
+    ...dataLengthBits,
+    ...dataLengthCrcBits,
+    ...dataCrcBits
+  );
 
   const bitCount = bits.length;
 
@@ -418,13 +474,10 @@ function sendBytes(bytes) {
   const packetCount = PacketUtils.getPacketCount(bitCount);
   const totalDurationSeconds = PacketUtils.getDataTransferDurationSeconds(bitCount);
 
-  const errorCorrectionBits = [];
-
   AudioSender.beginAt(startSeconds);
   // send all packets
   for(let i = 0; i < packetCount; i++) {
     let packet = PacketUtils.getPacketBits(bits, i);
-    errorCorrectionBits.push(...packet);
     SENT_ENCODED_BITS.push(...packet);
     if(packet.length > packetBitCount) {
       console.error('Too many bits in the packet. tried to send %s, limited to %s', packet.length, packetBitCount);
@@ -522,39 +575,29 @@ function resumeGraph() {
   }
 }
 
-function getTransferredCorrectedBits() {
-  const bits = [];
-  const packetCount = StreamManager.getPacketReceivedCount();
-  for(let packetIndex = 0; packetIndex < packetCount; packetIndex++) {
-    let packetBits = StreamManager.getPacketBits(packetIndex);
-    if(packetizationPanel.getErrorCorrection()) {
-      bits.push(...HammingEncoding.decode(packetBits));
-    } else {
-      bits.push(...packetBits);
-    }
-  }
-  return bits;
-}
-
 function handleStreamManagerChange() {
   const channelCount = availableFskPairsPanel.getSelectedFskPairs().length;
   let allRawBits = StreamManager.getStreamBits();
   let allEncodedBits = StreamManager.getAllPacketBits();
-  let allDecodedBits = getTransferredCorrectedBits();
+  let allDecodedBits = StreamManager.getAllPacketBitsDecoded();
 
   // get packet data before removing decoded bits
-  const transmissionByteCount = parseTransmissionByteCount(allDecodedBits);
-  const transmissionByteCountCrc = parseTransmissionByteCountCrc(allDecodedBits)
-  const transmissionByteCountActualCrc = CRC.check(
-    bitsToBytes(
-      numberToBits(
-        transmissionByteCount,
-        MAXIMUM_PACKETIZATION_SIZE_BITS
-      )
-    ), CRC_BIT_COUNT
-  );
-  const trustedLength = transmissionByteCountCrc === transmissionByteCountActualCrc;
+  const transmissionByteCount = StreamManager.getTransferByteCount();
+  const transmissionByteCountCrc = StreamManager.getTransferByteCountCrc();
+  const transmissionByteCountActualCrc = StreamManager.getTransferByteCountActualCrc();
+
+  const trustedLength = StreamManager.isTransferByteCountTrusted();
   const totalBitsTransferring = parseTotalBitsTransferring(allDecodedBits);
+
+  const transmissionDataCrc = StreamManager.getTransferDataCrc();
+  const transmissionDataActualCrc = StreamManager.getTransferActualDataCrc();
+  const transmissionCrc = document.getElementById('received-packet-original-data-crc');
+  transmissionCrc.innerText = numberToHex(packetizationPanel.getDataCrc())(transmissionDataCrc);
+  const trustedData = StreamManager.isTransferDataTrusted();
+  transmissionCrc.className = trustedData ? 'bit-correct' : 'bit-wrong';
+  if(!trustedData) {
+    transmissionCrc.innerText += ' (Expected ' + numberToHex(packetizationPanel.getDataCrc())(transmissionDataActualCrc) + ')';
+  }
 
   // reduce all decoded bits based on original data sent
   allDecodedBits = removeDecodedHeadersAndPadding(allDecodedBits);
@@ -604,10 +647,10 @@ function handleStreamManagerChange() {
     '');
   document.getElementById('received-packet-original-bytes').innerText = transmissionByteCount.toLocaleString();
   const packetCrc = document.getElementById('received-packet-original-bytes-crc');
-  packetCrc.innerText = '0x' + asHex(2)(transmissionByteCountCrc);
+  packetCrc.innerText = numberToHex(packetizationPanel.getDataSizeCrc())(transmissionByteCountCrc);
   packetCrc.className = trustedLength ? 'bit-correct' : 'bit-wrong';
   if(!trustedLength) {
-    packetCrc.innerText += ' (Expected 0x' + asHex(2)(transmissionByteCountActualCrc) + ')';
+    packetCrc.innerText += ' (Expected ' + numberToHex(packetizationPanel.getDataSizeCrc())(transmissionByteCountActualCrc) + ')';
   }
 
   document.getElementById('received-encoded-bits-error-percent').innerText = (
@@ -619,44 +662,23 @@ function handleStreamManagerChange() {
   document.getElementById('received-decoded-bits-error-percent').innerText = (
     Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
   ).toLocaleString();
-  // ArrayBuffer / ArrayBufferView
-  const receivedText = bitsToText(allDecodedBits);
+
+  const bytes = StreamManager.getDataBytes();
+  const receivedText = bytesToText(bytes);
+
   messagePanel.setReceived(
     receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '')
   );
 }
-function asHex(length) {
-  return (number) => number.toString(16).padStart(length, '0').toUpperCase();
-}
-function parseDataTransferDurationMilliseconds() {
-  const decodedBits = getTransferredCorrectedBits();
-  const byteCount = parseTransmissionByteCount(decodedBits);
-  return PacketUtils.getDataTransferDurationMillisecondsFromByteCount(byteCount);
-}
 function parseTotalBitsTransferring() {
-  const dataByteCount = parseTransmissionByteCount();
+  const dataByteCount = StreamManager.getTransferByteCount();
   const bitCount = PacketUtils.getPacketizationBitCountFromByteCount(dataByteCount);
   const segments = getTotalSegmentCount(bitCount);
   return segments * availableFskPairsPanel.getSelectedFskPairs().length;
 }
-function parseTransmissionByteCountCrc() {
-  let decodedBits = getTransferredCorrectedBits();
-  const offset = MAXIMUM_PACKETIZATION_SIZE_BITS;
-  decodedBits = decodedBits.slice(offset, offset + CRC_BIT_COUNT);
-  return bitsToInt(decodedBits, CRC_BIT_COUNT);
-}
-function parseTransmissionByteCount() {
-  let decodedBits = getTransferredCorrectedBits();
-  decodedBits = decodedBits.slice(0, MAXIMUM_PACKETIZATION_SIZE_BITS);
-  while(decodedBits.length < MAXIMUM_PACKETIZATION_SIZE_BITS) {
-    // assume maximum value possible
-    // until we have enough bits to find the real size
-    decodedBits.push(1);
-  }
-  return bitsToInt(decodedBits, MAXIMUM_PACKETIZATION_SIZE_BITS);
-}
+
 function removeEncodedPadding(bits) {
-  const sizeBits = MAXIMUM_PACKETIZATION_SIZE_BITS;
+  const sizeBits = packetizationPanel.getDataSizePower();
   const dataSize = ERROR_CORRECTION_DATA_SIZE;
   const blockSize = ERROR_CORRECTION_BLOCK_SIZE;
   let bitsNeeded = sizeBits;
@@ -675,7 +697,10 @@ function removeEncodedPadding(bits) {
   const dataByteCount = StreamManager.getTransferByteCount();
 
   // determine how many decoded bits need to be sent (including the size)
-  const totalBits = (dataByteCount * 8) + MAXIMUM_PACKETIZATION_SIZE_BITS + CRC_BIT_COUNT;
+  let totalBits = (dataByteCount * 8);
+  totalBits += packetizationPanel.getDataSizePower();
+  if(packetizationPanel.getDataSizePower() !== 0) totalBits += packetizationPanel.getDataSizeCrc();
+  totalBits += packetizationPanel.getDataCrc();
   let encodingBitCount = totalBits;
   if(packetizationPanel.getErrorCorrection()) {
     const blocks = Math.ceil(encodingBitCount / dataSize);
@@ -691,17 +716,51 @@ function removeEncodedPadding(bits) {
   return bits;
 }
 function removeDecodedHeadersAndPadding(bits) {
-  const sizeBits = MAXIMUM_PACKETIZATION_SIZE_BITS;
-  let bitCount = bits.length / 8;
-  if(bits.length >= sizeBits) {
-    bitCount = bitsToInt(bits.slice(0, sizeBits), sizeBits);
+  const sizeBitCount = packetizationPanel.getDataSizePower();
+  const sizeCrcBitCount = packetizationPanel.getDataSizeCrc();
+  const dataCrcBitCount = packetizationPanel.getDataCrc();
+  let byteCount;
+  let offset = 0;
+  if(sizeBitCount !== 0) {
+    offset += sizeBitCount;
+    // header bits only?
+    if(bits.length <= offset) return [];
+    byteCount = bitsToInt(bits.slice(0, sizeBitCount), sizeBitCount);
+    if(sizeCrcBitCount !== 0) {
+      offset += sizeBitCount;
+      // header bits only?
+      if(bits.length <= offset) return [];
+      let countCrc = bitsToInt(bits.slice(sizeBitCount, sizeBitCount + sizeCrcBitCount), sizeCrcBitCount);
+      let actualCountCrc = CRC.check(numberToBytes(sizeCrcBitCount, sizeBitCount), sizeCrcBitCount);
+      // can we trust the size?
+      if(countCrc !== actualCountCrc) {
+        if(dataCrcBitCount !== 0) {
+          offset += dataCrcBitCount;
+          if(bits.length <= offset) return [];
+        }
+        // Change based off of header bits
+        byteCount = (bits.length - offset) / 8;
+      }
+    } else if(dataCrcBitCount !== 0) {
+      offset += dataCrcBitCount;
+      if(bits.length <= offset) return [];
+    }
+    // remove headers and excessive bits
+    const bitCount = byteCount * 8;
+    return bits.slice(offset, offset + bitCount).splice(bitCount);
+  } else {
+    // size not included. Means 1 byte max
+    // crc not valid on size
+    // crc valid on byte
+    const dataCrcBitCount = packetizationPanel.getDataCrc();
+    if(dataCrcBitCount === 0) {
+      // bits are pure data for 1 byte
+      return bits.slice(0, 8);
+    } else {
+      // get byte after data crc
+      return bits.slice(dataCrcBitCount, dataCrcBitCount + 8);
+    }
   }
-  // remove size and crc header
-  bits.splice(0, sizeBits + CRC_BIT_COUNT);
-
-  // remove excessive bits
-  bits.splice(bitCount * 8);
-  return bits;
 }
 const bitReducer = (packetBitSize, blockSize, blockCallback) => (all, bit, i)  => {
   const packetIndex = Math.floor(i / packetBitSize);
@@ -780,63 +839,10 @@ function getAudioContext() {
   }
   return audioContext;
 }
-function bitsToInt(bits, bitLength) {
-  // only grab the bits we need
-  const bitString = bits.slice(0, bitLength)
-    // combine into string
-    .join('')
-    // Assume missing bits were zeros
-    .padEnd(bitLength, '0');
-  // parse as int
-  return parseInt(bitString, 2);
-}
-function intToBytes(int, bitLength) {
-  const byteCount = Math.ceil(bitLength/8);
-  const bytes = [];
-  for(let i = 0; i < byteCount; i++) {
-    bytes.push((int >> (8 * (byteCount - 1 - i))) & 0xFF);
-  }
-  return bytes;
-}
-function numberToBits(number, bitLength) {
-  const bits = [];
-  for(let i = bitLength - 1; i >= 0; i--)
-    bits.push((number >> i) & 1);
-  return bits;
-}
-function bytesToText(bytes) {
-  return new TextDecoder().decode(bytes);
-}
-function textToBytes(text) {
-  return new TextEncoder().encode(text);
-}
-function bytesToBits(bytes) {
-  return bytes.reduce((bits, byte) => [
-      ...bits, 
-      ...byte.toString(2).padStart(8, '0').split('').map(Number)
-    ], []);
-}
-function bitsToBytes(bits) {
-  const bytes = [];
-  for(let i = 0; i < bits.length; i+= 8) {
-    bytes.push(parseInt(bits.slice(i, i + 8).join(''), 2));
-  }
-  return bytes;
-}
-function textToBits(text) {
-  return bytesToBits(textToBytes(text));
-}
-function bitsToText(bits) {
-  const bytes = new Uint8Array(bitsToBytes(bits));
-  return bytesToText(bytes.buffer);
-}
 function handleSendButtonClick() {
   if(messagePanel.getSendButtonText() === 'Stop') {
     AudioSender.stop();
   } else {
-    AudioReceiver.reset();
-    StreamManager.reset();
-    frequencyGraphPanel.start();
     const text = messagePanel.getMessage();
     sendBytes(textToBytes(text));
   }

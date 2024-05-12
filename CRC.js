@@ -1,3 +1,6 @@
+// CRC codes are not signed
+export const INVALID = -1;
+
 function calcCrc(
   bytes,
   size,

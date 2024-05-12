@@ -2,6 +2,7 @@ let SEGMENT_DURATION = 30;
 let PACKET_SIZE_BITS = 8;
 let DATA_SIZE_BITS = 8;
 let DATA_SIZE_CRC_BITS = 8;
+let DATA_CRC_BITS = 8;
 let BITS_PER_SEGMENT = 1;
 let PACKET_ENCODING = false;
 let PACKET_ENCODING_SIZE = 7;
@@ -14,6 +15,7 @@ export const changeConfiguration = (config) => {
     packetSizeBitCount,
     dataSizeBitCount,
     dataSizeCrcBitCount,
+    dataCrcBitCount,
     bitsPerSegment,
     packetEncoding,
     packetEncodingBitCount,
@@ -23,6 +25,7 @@ export const changeConfiguration = (config) => {
   PACKET_SIZE_BITS = packetSizeBitCount;
   DATA_SIZE_BITS = dataSizeBitCount;
   DATA_SIZE_CRC_BITS = dataSizeCrcBitCount;
+  DATA_CRC_BITS = dataCrcBitCount;
   BITS_PER_SEGMENT = bitsPerSegment;
   PACKET_ENCODING = packetEncoding;
   PACKET_ENCODING_SIZE = packetEncodingBitCount;
@@ -81,7 +84,7 @@ export const canSendPacket = () => {
 }
 export const getPacketEncodingBlockCount = () =>
   isPacketEncoded() ? Math.floor(getPacketMaxBitCount() / packetEncodingBlockSize()) : 0;
-export const getPacketizationHeaderBitCount = () => DATA_SIZE_BITS + DATA_SIZE_CRC_BITS;
+export const getPacketizationHeaderBitCount = () => DATA_SIZE_BITS + DATA_SIZE_CRC_BITS + DATA_CRC_BITS;
 export const getPacketizationBitCountFromBitCount = (bitCount) => bitCount + getPacketizationHeaderBitCount();
 export const getPacketizationBitCountFromByteCount = (byteCount) =>
   getPacketizationBitCountFromBitCount(byteCount * 8);

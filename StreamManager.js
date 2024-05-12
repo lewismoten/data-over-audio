@@ -1,5 +1,10 @@
 import Dispatcher from "./Dispatcher";
-import { bitsToInt } from "./converters";
+import * as CRC from './CRC';
+import { 
+  bitsToBytes,
+  bitsToInt,
+  numberToBytes
+} from "./converters";
 
 const dispatcher = new Dispatcher('StreamManager', ['change']);
 
@@ -102,6 +107,23 @@ export const getAllPacketBits = () => {
   }
   return bits;
 }
+export const getAllPacketBitsDecoded = () => {
+  const packetCount = getPacketReceivedCount();
+  const bits = [];
+  for(let packetIndex = 0; packetIndex < packetCount; packetIndex++) {
+    bits.push(...getPacketBitsDecoded(packetIndex));
+  }
+  return bits;
+}
+export const getDataBytes = () => {
+  const bits = getAllPacketBitsDecoded();
+  bits.splice(0, getStreamHeaderBitCount());
+  const bytes = bitsToBytes(bits);
+  if(isTransferByteCountTrusted()) {
+    bytes.length = getTransferByteCount();
+  }
+  return bytes;
+}
 export const getPacketBits = (packetIndex, defaultBit = 0) => {
   const bits = [];
   const packet = BITS[packetIndex] ?? [];
@@ -121,10 +143,19 @@ export const getPacketBitsDecoded = (packetIndex, defaultBit = 0) => {
   const bits = getPacketBits(packetIndex, defaultBit);
   return PACKET_ENCODING.decode(bits);
 }
+const getStreamHeaderBitCount = () => {
+  return Object.keys(STREAM_HEADERS).reduce((lastBit, key) => {
+    const {index = 0, length = 0} = STREAM_HEADERS[key];
+    if(length === 0)  return lastBit;
+    if(lastBit < index + length) return index + length;
+    return lastBit;
+  }, 0);
+}
 const getStreamHeaderBits = name => {
   const header = STREAM_HEADERS[name];
   if(!header) return [];
   const { index, length } = header;
+  if(length === 0) return [];
   const packetCount = getPacketReceivedCount();
   const bits = [];
   for(let packetIndex = 0; packetIndex < packetCount; packetIndex++) {
@@ -136,6 +167,48 @@ const getStreamHeaderBits = name => {
 export const getTransferByteCount = () => {
   const name = 'transfer byte count';
   const length = STREAM_HEADERS[name].length;
+  if(length === 0) return 1;
   const bits = getStreamHeaderBits(name);
   return bitsToInt(bits, length);
+}
+export const getTransferByteCountCrc = () => {
+  const name = 'transfer byte count crc';
+  const length = STREAM_HEADERS[name].length;
+  if(length === 0) return 0;
+  const bits = getStreamHeaderBits(name);
+  if(bits.length !== length) return CRC.INVALID;
+  return bitsToInt(bits, length);
+}
+export const getTransferByteCountActualCrc = () => {
+  const countBits = getStreamHeaderBits('transfer byte count').length;
+  if(countBits === 0) return 0;
+
+  const crcBits = getStreamHeaderBits('transfer byte count crc').length;
+  if(crcBits === 0) return 0;
+
+  const count = getTransferByteCount();
+  const bytesOfCount = numberToBytes(count, countBits);
+  return CRC.check(bytesOfCount, crcBits)
+}
+export const isTransferByteCountTrusted = () => {
+  return getTransferByteCountCrc() === getTransferByteCountActualCrc();
+}
+export function getTransferDataCrc() {
+  const name = 'transfer byte crc';
+  const length = STREAM_HEADERS[name].length;
+  if(length === 0) return 0;
+  const bits = getStreamHeaderBits(name);
+  if(bits.length !== length) return CRC.INVALID;
+  return bitsToInt(bits, length);
+}
+export function getTransferActualDataCrc() {
+  const name = 'transfer byte crc';
+  const length = STREAM_HEADERS[name].length;
+  if(length === 0) return 0;
+  const crcBits = getStreamHeaderBits(name).length;
+  const bytes = getDataBytes();
+  return CRC.check(bytes, crcBits);
+}
+export const isTransferDataTrusted = () => {
+  return getTransferDataCrc() === getTransferActualDataCrc();
 }
