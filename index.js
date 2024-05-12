@@ -14,7 +14,8 @@ import FrequencyPanel from "./Panels/FrequencyPanel";
 import SignalPanel from "./Panels/SignalPanel";
 import PacketizationPanel from "./Panels/PacketizationPanel";
 import AvailableFskPairsPanel from "./Panels/AvailableFskPairsPanel";
-
+import FrequencyGraphPanel from "./Panels/FrequencyGraphPanel";
+import GraphConfigurationPanel from './Panels/GraphConfigurationPanel'
 var audioContext;
 var microphoneStream;
 var microphoneNode;
@@ -48,10 +49,6 @@ let SAMPLES = [];
 
 var bitStart = [];
 var PAUSE = false;
-var PAUSE_AFTER_END = true;
-
-let USED_FSK = [];
-let AVAILABLE_FSK = [];
 
 const communicationsPanel = new CommunicationsPanel();
 const messagePanel = new MessagePanel();
@@ -61,9 +58,13 @@ const frequencyPanel = new FrequencyPanel();
 const signalPanel = new SignalPanel();
 const packetizationPanel = new PacketizationPanel();
 const availableFskPairsPanel = new AvailableFskPairsPanel();
+const frequencyGraphPanel = new FrequencyGraphPanel();
+const graphConfigurationPanel = new GraphConfigurationPanel();
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
+  panelContainer.prepend(graphConfigurationPanel.getDomElement());
+  panelContainer.prepend(frequencyGraphPanel.getDomElement());
   panelContainer.prepend(availableFskPairsPanel.getDomElement());
   panelContainer.prepend(packetizationPanel.getDomElement());
   panelContainer.prepend(signalPanel.getDomElement());
@@ -96,6 +97,7 @@ function handleWindowLoad() {
   signalPanel.setSegmentDuration(30);
   signalPanel.setAmplitudeThreshold(0.78);
   signalPanel.setSmoothingTimeConstant(0);
+  signalPanel.setTimeoutMilliseconds(60);
 
   packetizationPanel.setSizePower(5);
   packetizationPanel.setErrorCorrection(true);
@@ -103,7 +105,17 @@ function handleWindowLoad() {
 
   availableFskPairsPanel.setFskPairs(frequencyPanel.getFskPairs());
 
-  // Communications Events
+  graphConfigurationPanel.setDurationMilliseconds(signalPanel.getSegmentDuration() * 20);
+  graphConfigurationPanel.setPauseAfterEnd(true);
+
+  frequencyGraphPanel.setFskPairs(availableFskPairsPanel.getSelectedFskPairs());
+  frequencyGraphPanel.setAmplitudeThreshold(signalPanel.getAmplitudeThreshold());
+  frequencyGraphPanel.setDurationMilliseconds(graphConfigurationPanel.getDurationMilliseconds());
+
+  AudioReceiver.setTimeoutMilliseconds(signalPanel.getTimeoutMilliseconds());
+
+
+  // Events
   communicationsPanel.addEventListener('listeningChange', handleChangeListening);
   communicationsPanel.addEventListener('sendSpeakersChange', handleChangeSendSpeakers);
   communicationsPanel.addEventListener('sendAnalyzerChange', handleChangeSendAnalyzer);
@@ -124,9 +136,18 @@ function handleWindowLoad() {
   });
 
   signalPanel.addEventListener('waveformChange', updateAudioSender);
-  signalPanel.addEventListener('segmentDurationChange', configurationChanged);
-  signalPanel.addEventListener('amplitudeThresholdChange', configurationChanged);
+  signalPanel.addEventListener('segmentDurationChange', (event) => { 
+    frequencyGraphPanel.setSamplingPeriod(event.value);
+    configurationChanged();
+  });
+  signalPanel.addEventListener('amplitudeThresholdChange', ({value}) => {
+    frequencyGraphPanel.setAmplitudeThreshold(value);
+    configurationChanged();
+  });
   signalPanel.addEventListener('smoothingConstantChange', configurationChanged);
+  signalPanel.addEventListener('timeoutChange', () => {
+    AudioReceiver.setTimeoutMilliseconds(signalPanel.getTimeoutMilliseconds());
+  })
 
   packetizationPanel.addEventListener('sizePowerChange', configurationChanged);
   packetizationPanel.addEventListener('interleavingChange', () => {
@@ -136,6 +157,18 @@ function handleWindowLoad() {
     configurationChanged();
   });
   packetizationPanel.addEventListener('errorCorrectionChange', configurationChanged);
+
+  availableFskPairsPanel.addEventListener('change', (event) => {
+    frequencyGraphPanel.setFskPairs(event.selected);
+  });
+  graphConfigurationPanel.addEventListener('pauseAfterEndChange', (event) => {
+    if(!frequencyGraphPanel.isRunning()) {
+      frequencyGraphPanel.start();
+    }
+  })
+  graphConfigurationPanel.addEventListener('durationChange', event => {
+    frequencyGraphPanel.setDurationMilliseconds(graphConfigurationPanel.getDurationMilliseconds());
+  });
 
   // Setup audio sender
   AudioSender.addEventListener('begin', () => messagePanel.setSendButtonText('Stop'));
@@ -156,11 +189,6 @@ function handleWindowLoad() {
   receivedChannelGraph.addEventListener('mouseout', handleReceivedChannelGraphMouseout);
   receivedChannelGraph.addEventListener('mousemove', handleReceivedChannelGraphMousemove);
   receivedChannelGraph.addEventListener('click', handleReceivedChannelGraphClick);
-  document.getElementById('pause-after-end').checked = PAUSE_AFTER_END;
-  document.getElementById('pause-after-end').addEventListener('change', event => {
-    PAUSE_AFTER_END = event.target.checked;
-    if(!PAUSE_AFTER_END) resumeGraph();
-  })
   document.getElementById('max-bits-displayed-on-graph').value= MAX_BITS_DISPLAYED_ON_GRAPH;
   document.getElementById('max-bits-displayed-on-graph').addEventListener('input', (event) => {
     MAX_BITS_DISPLAYED_ON_GRAPH = parseInt(event.target.value);
@@ -185,8 +213,6 @@ function handleAudioSenderSend({bits}) {
 }
 function configurationChanged() {
   if(analyser) analyser.fftSize = frequencyPanel.getFftSize();
-  USED_FSK = calculateMultiFrequencyShiftKeying(false);
-  AVAILABLE_FSK = calculateMultiFrequencyShiftKeying(true);
   updatePacketUtils();
   updateStreamManager();
   updateAudioSender();
@@ -197,16 +223,14 @@ function configurationChanged() {
 }
 function updateAudioSender() {
   AudioSender.changeConfiguration({
-    channels: USED_FSK,
+    channels: availableFskPairsPanel.getSelectedFskPairs(),
     destination: SEND_VIA_SPEAKER ? audioContext.destination : getAnalyser(),
     waveForm: signalPanel.getWaveform()
   });
 }
-const logFn = text => (...args) => {
-  // console.log(text, ...args);
-}
 const handleAudioReceiverStart = ({signalStart}) => {
   StreamManager.reset();
+  frequencyGraphPanel.setSignalStart(signalStart);
   RECEIVED_STREAM_START_MS = signalStart;
 }
 const handleAudioReceiverReceive = ({signalStart, signalIndex, indexStart, bits}) => {
@@ -216,15 +240,17 @@ const handleAudioReceiverReceive = ({signalStart, signalIndex, indexStart, bits}
   // console.log(signalIndex, packetIndex, segmentIndex, bits.join(''));
   StreamManager.addBits(packetIndex, segmentIndex, bits);
 }
-const handleAudioReceiverEnd = () => {
-  if(PAUSE_AFTER_END) {
+const handleAudioReceiverEnd = (e) => {
+  frequencyGraphPanel.setSignalEnd(e.signalEnd);
+  if(graphConfigurationPanel.getPauseAfterEnd()) {
     stopGraph();
+    frequencyGraphPanel.stop();
     AudioSender.stop();
   }
 }
 function updateAudioReceiver() {
   AudioReceiver.changeConfiguration({
-    fskSets: USED_FSK,
+    fskSets: availableFskPairsPanel.getSelectedFskPairs(),
     amplitudeThreshold: Math.floor(signalPanel.getAmplitudeThreshold() * 255),
     analyser: getAnalyser(),
     signalIntervalMs: signalPanel.getSegmentDuration(),
@@ -238,7 +264,7 @@ function updateStreamManager() {
   StreamManager.changeConfiguration({
     bitsPerPacket: PacketUtils.getPacketMaxBitCount(),
     segmentsPerPacket: PacketUtils.getPacketSegmentCount(),
-    bitsPerSegment: USED_FSK.length,
+    bitsPerSegment: availableFskPairsPanel.getSelectedFskPairs().length,
     streamHeaders: {
       'transfer byte count': {
         index: 0,
@@ -255,7 +281,7 @@ function updatePacketUtils() {
   PacketUtils.setEncoding(
     packetizationPanel.getErrorCorrection() ? HammingEncoding : undefined
   );
-  const bitsPerSegment = USED_FSK.length;
+  const bitsPerSegment = availableFskPairsPanel.getSelectedFskPairs().length;
   PacketUtils.changeConfiguration({
     segmentDurationMilliseconds: signalPanel.getSegmentDuration(),
     packetSizeBitCount: packetizationPanel.getSizePower(),
@@ -314,7 +340,7 @@ function drawChannels() {
   const sampleRate = getAudioContext().sampleRate;
   const fftSize = frequencyPanel.getFftSize();
   const frequencyResolution = sampleRate / fftSize;
-  const channels = USED_FSK;
+  const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelCount = channels.length;
   const canvas = document.getElementById('channel-frequency-graph');
   const ctx = canvas.getContext('2d');
@@ -356,30 +382,7 @@ function percentInFrequency(hz, frequencyResolution) {
   const percent = hzInSegement / frequencyResolution;
   return percent;
 }
-function calculateMultiFrequencyShiftKeying(includeExcluded = false) {
-  var audioContext = getAudioContext();
-  const sampleRate = audioContext.sampleRate;
-  const fftSize = frequencyPanel.getFftSize();
-  const frequencyResolution = sampleRate / fftSize;
-  const channels = [];
-  const pairStep = frequencyResolution * (2 + frequencyPanel.getMultiFskPadding()) * frequencyPanel.getFskPadding();
-  let channelId = -1;
-  const minimumFrequency = frequencyPanel.getMinimumFrequency();
-  const maximumFrequency = frequencyPanel.getMaximumFrequency();
-  for(let hz = minimumFrequency; hz < maximumFrequency; hz+= pairStep) {
-    const low = hz;
-    const high = hz + frequencyResolution * frequencyPanel.getFskPadding();
-    if(low < minimumFrequency) continue;
-    if(high > maximumFrequency) break;
-    channelId++;
 
-    if(!includeExcluded) {
-      if(EXCLUDED_CHANNELS.includes(channelId)) continue;
-    }
-    channels.push([low, high]);
-  }
-  return channels;
-}
 function logSent(text) {
   // display what is being sent
   sentDataTextArea.value += text + '\n';
@@ -447,7 +450,7 @@ function sendBytes(bytes) {
   resumeGraph();
 }
 function showSentBits() {
-  const channelCount = USED_FSK.length;
+  const channelCount = availableFskPairsPanel.getSelectedFskPairs().length;
 
   // original bits
   document.getElementById('sent-data').innerHTML =
@@ -474,7 +477,7 @@ function showSentBits() {
   ), ''));  
 }
 function sendPacket(bits, packetStartSeconds) {
-  const channels = USED_FSK;
+  const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelCount = channels.length;
   let bitCount = bits.length;
   const segmentDurationSeconds = PacketUtils.getSegmentDurationSeconds();
@@ -542,7 +545,7 @@ function getTransferredCorrectedBits() {
 }
 
 function handleStreamManagerChange() {
-  const channelCount = USED_FSK.length;
+  const channelCount = availableFskPairsPanel.getSelectedFskPairs().length;
   let allRawBits = StreamManager.getStreamBits();
   let allEncodedBits = StreamManager.getAllPacketBits();
   let allDecodedBits = getTransferredCorrectedBits();
@@ -642,7 +645,7 @@ function parseTotalBitsTransferring() {
   const dataByteCount = parseTransmissionByteCount();
   const bitCount = PacketUtils.getPacketizationBitCountFromByteCount(dataByteCount);
   const segments = getTotalSegmentCount(bitCount);
-  return segments * USED_FSK.length;
+  return segments * availableFskPairsPanel.getSelectedFskPairs().length;
 }
 function parseTransmissionByteCountCrc() {
   let decodedBits = getTransferredCorrectedBits();
@@ -841,6 +844,7 @@ function handleSendButtonClick() {
   } else {
     AudioReceiver.reset();
     StreamManager.reset();
+    frequencyGraphPanel.start();
     const text = messagePanel.getMessage();
     sendBytes(textToBytes(text));
   }
@@ -848,6 +852,7 @@ function handleSendButtonClick() {
 function getAnalyser() {
   if(analyser) return analyser;
   analyser = audioContext.createAnalyser();
+  frequencyGraphPanel.setAnalyser(analyser);
   analyser.smoothingTimeConstant = signalPanel.getSmoothingTimeConstant();
   analyser.fftSize = frequencyPanel.getFftSize();
   return analyser;
@@ -1122,7 +1127,7 @@ function drawChannelData() {
   // ended too long ago?
   if(lastStreamEnded < graphEarliest) return;
 
-  const channels = USED_FSK;
+  const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelCount = channels.length;
 
   const canvas = document.getElementById('received-channel-graph');
@@ -1316,7 +1321,7 @@ function drawSelectedChannel(ctx, channelCount, width, height) {
 }
 function drawChannelNumbers(ctx, channelCount, width, height) {
   const offset = 0;
-  const channels = USED_FSK;
+  const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelHeight = height / channelCount;
   const segmentWidth = width / MAX_BITS_DISPLAYED_ON_GRAPH;
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
@@ -1364,7 +1369,7 @@ function drawFrequencyData(forcedDraw) {
   ctx.stroke();
   drawBitDurationLines(ctx, 'rgba(255, 255, 0, .25)');
   drawBitStart(ctx, 'green');
-  const frequencies = USED_FSK;
+  const frequencies = availableFskPairsPanel.getSelectedFskPairs();
   const high = 1;
   const low = 0
   const isSelectedOrOver = CHANNEL_OVER !== -1 || CHANNEL_SELECTED !== -1;
@@ -1453,7 +1458,7 @@ function handleReceivedChannelGraphClick(e) {
   const {channelIndex, segmentIndex} = getChannelAndSegment(e);
   CHANNEL_SELECTED = channelIndex;
   SEGMENT_SELECTED = segmentIndex;
-  const channels = USED_FSK;
+  const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelCount = channels.length;
 
   const selectedSamples = document.getElementById('selected-samples');
@@ -1561,7 +1566,7 @@ function getChannelAndSegment(e) {
     segmentIndex: -1
   };
   // what channel are we over?
-  const channels = USED_FSK;
+  const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelCount = channels.length;
   let channelIndex = Math.floor((y / height) * channelCount);
   if(channelIndex === channelCount) channelIndex--;

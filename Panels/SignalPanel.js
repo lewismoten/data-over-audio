@@ -28,12 +28,19 @@ class SignalPanel extends BasePanel {
     this.addText('%');
     this.closeField();
 
+    this.openField('Timeout');
+    this.addInputNumber('timeout', 30, {min: 30, max: 1000, eventName: 'timeoutChange'});
+    this.addText('ms');
+    this.closeField();
+
     this.openField('Smoothing Time Constant');
     this.addInputNumber('smoothing-time-constant', 0, {min: 0, max: 100, eventName: 'smothingTimeConstantChange', translation: 'percent'});
     this.addText('%');
     this.closeField();
   };
 
+  getTimeoutMilliseconds = () => this.getNumberById('timeout');
+  setTimeoutMilliseconds = (milliseconds) => this.setValueById('timeout', milliseconds);
   getWaveform = () => this.getValueById('wave-form');
   setWaveform = (value) => this.setValueById('wave-form', value);
 

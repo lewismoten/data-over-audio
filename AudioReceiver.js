@@ -8,6 +8,7 @@ let AMPLITUDE_THRESHOLD = 50;
 let FSK_SETS = [];
 let SIGNAL_INTERVAL_MS = 30;
 let SIGNAL_TIMEOUT_MS = 400;
+let LAST_SIGNAL_BEFORE_TIMEOUT = 0;
 
 let HAS_SIGNAL = false;
 let SIGNAL_START_MS = -1;
@@ -17,6 +18,14 @@ let SAMPLE_RATE;
 let signalTimeoutId;
 let SAMPLES = [];
 
+const setTimeoutMilliseconds = (milliseconds) => {
+  SIGNAL_TIMEOUT_MS = milliseconds;
+  if(signalTimeoutId) {
+    // probably a long timeout. let's reset
+    window.clearTimeout(signalTimeoutId);
+    signalTimeoutId = window.setTimeout(handleSignalLost, SIGNAL_TIMEOUT_MS, LAST_SIGNAL_BEFORE_TIMEOUT);
+  }
+}
 const changeConfiguration = ({
   fskSets,
   signalIntervalMs,
@@ -196,6 +205,7 @@ const handleSignalOn = time => {
 }
 const handleSignalOff = time => {
   if(HAS_SIGNAL && !signalTimeoutId) {
+    LAST_SIGNAL_BEFORE_TIMEOUT = time;
     signalTimeoutId = window.setTimeout(handleSignalLost, SIGNAL_TIMEOUT_MS, time);
   }
 }
@@ -222,4 +232,5 @@ export {
   reset,
   addEventListener,
   removeEventListener,
+  setTimeoutMilliseconds
 }

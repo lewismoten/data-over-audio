@@ -5,6 +5,7 @@ class AvailableFskPairsPanel extends BasePanel {
     super('Available FSK Pairs');
     this.exclude = [];
     this.fskPairs = [];
+    this.originalSelectedFskPairs = [];
     this.sampleRate = 48000;
 
     this.addCanvas('fsk-spectrum', 200, 32);
@@ -28,9 +29,25 @@ class AvailableFskPairsPanel extends BasePanel {
     } else if(!this.exclude.includes(event.id)) {
       this.exclude.push(event.id);
     }
+    this.checkChanges();
     this.drawFskSpectrum();
   };
 
+  checkChanges = () => {
+    const selected = this.getSelectedFskPairs();
+    const original = this.originalSelectedFskPairs;
+    let changed = false;
+    if(original.length !== selected.length) {
+      changed = true;
+    } else {
+      const hertz = selected.flat();
+      changed = original.flat().some((hz, i) => hz !== hertz[i]);
+    }
+    if(changed) {
+      this.originalSelectedFskPairs = selected;
+      this.dispatcher.emit('change', {selected});
+    }
+  }
   getSelectedFskPairs = () => this.fskPairs
     .filter(this.isSelected);
   
@@ -38,6 +55,7 @@ class AvailableFskPairsPanel extends BasePanel {
   setSelectedIndexes = (values) => {
     this.exclude = values;
     this.setFskPairs(this.fskPairs);
+    this.checkChanges();
   }
   
   setFskPairs = fskPairs => {
@@ -51,6 +69,7 @@ class AvailableFskPairsPanel extends BasePanel {
         eventName: 'select'
     }));
     this.replaceCheckedInputs('checkbox', 'fsk-pairs', items);
+    this.checkChanges();
     this.drawFskSpectrum();
   }
 
