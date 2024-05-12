@@ -5,8 +5,8 @@ const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 class SignalPanel extends BasePanel {
   constructor() {
     super('Signal');
-    this.openField('Segment Duration');
-    this.addInputNumber('segment-duration', 100, {min: 0, max: 1000, eventName: 'segmentDurationChange'});
+    this.openField('Sampling Period');
+    this.addInputNumber('segment-duration', 100, {min: 3, max: 1000, eventName: 'segmentDurationChange'});
     this.addText('ms');
     this.closeField();
 
@@ -44,13 +44,13 @@ class SignalPanel extends BasePanel {
   getWaveform = () => this.getValueById('wave-form');
   setWaveform = (value) => this.setValueById('wave-form', value);
 
-  getSegmentDuration = () => parseInt(this.getValueById('segment-duration'));
-  setSegmentDuration = value => this.setValueById('segment-duration', value);
+  getSegmentDurationMilliseconds = () => this.getNumberById('segment-duration');
+  setSegmentDurationMilliseconds = value => this.setValueById('segment-duration', value);
 
-  getAmplitudeThreshold = () => parseInt(this.getValueById('amplitude-threshold')) / 100;
+  getAmplitudeThreshold = () => this.getNumberById('amplitude-threshold') / 100;
   setAmplitudeThreshold = value => this.setValueById('amplitude-threshold', clamp(value * 100, 0, 100));
 
-  getSmoothingTimeConstant = () => parseInt(this.getValueById('smoothing-time-constant')) / 100;
+  getSmoothingTimeConstant = () => this.getNumberById('smoothing-time-constant') / 100;
   setSmoothingTimeConstant = value => this.setValueById('smoothing-time-constant', clamp(value * 100, 0, 100));
 }
 

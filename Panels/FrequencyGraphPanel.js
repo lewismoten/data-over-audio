@@ -9,6 +9,7 @@ class FrequencyGraphPanel extends BasePanel {
     this.signalStart = performance.now();
     this.signalEnd = this.signalStart;
     this.samples = [];
+    this.samplesPerGroup = 1;
     this.duration = 200;
     this.amplitudeThreshold = 0;
     this.addButton('toggle', 'Start', 'toggle');
@@ -26,8 +27,14 @@ class FrequencyGraphPanel extends BasePanel {
   setSignalEnd = milliseconds => {
     this.signalEnd = milliseconds;
   }
-  setSamplingPeriod = (milliseconds) => this.samplingPeriod = milliseconds;
-
+  setSamplingPeriod = (milliseconds) => {
+    this.samplingPeriod = milliseconds;
+    if(!this.isRunning()) this.draw();
+  }
+  setSamplePeriodsPerGroup = count => {
+    this.samplesPerGroup = count;
+    if(!this.isRunning()) this.draw();
+  }
   setAmplitudeThreshold = value => {
     this.amplitudeThreshold = value;
     if(!this.isRunning()) this.draw();
@@ -150,7 +157,6 @@ class FrequencyGraphPanel extends BasePanel {
     if(!now) now = performance.now();
     let lastPeriodStart = now - ((now - this.signalStart) % this.samplingPeriod);
     let lastTextX = -1000;
-    ctx.lineWidth = 1;
     this.lastCountX = -1000;
     for(let time = lastPeriodStart; time > now - this.duration; time -= this.samplingPeriod) {
       const end = time + this.samplingPeriod;
@@ -161,6 +167,7 @@ class FrequencyGraphPanel extends BasePanel {
       ctx.moveTo(rightX, 0);
       ctx.lineTo(rightX, height);
       ctx.strokeStyle = 'hsla(120, 100%, 100%, 50%)';
+      ctx.lineWidth = 1;
       ctx.stroke();
 
       let samplePeriodWidth = rightX - leftX;
@@ -170,7 +177,19 @@ class FrequencyGraphPanel extends BasePanel {
       if(time >= this.signalStart && (this.signalEnd < this.signalStart || time < this.signalEnd)) {
 
         const signalIndex = Math.floor((time - this.signalStart) / this.samplingPeriod);
-        let text = signalIndex.toLocaleString();
+
+        const indexInGroup = signalIndex % this.samplesPerGroup;
+        if(indexInGroup === 0) {
+          // Line for when group started
+          ctx.beginPath();
+          ctx.moveTo(rightX, 0);
+          ctx.lineTo(rightX, height);
+          ctx.strokeStyle = 'hsla(180, 100%, 50%, 50%)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        let text = indexInGroup.toLocaleString();
         let size = ctx.measureText(text);
         let textX = leftX + (samplePeriodWidth / 2) - (size.width / 2);
         // far enough from prior text?

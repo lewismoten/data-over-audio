@@ -90,7 +90,7 @@ function handleWindowLoad() {
   frequencyPanel.setMultiFskPadding(1);
 
   signalPanel.setWaveform('triangle');
-  signalPanel.setSegmentDuration(30);
+  signalPanel.setSegmentDurationMilliseconds(30);
   signalPanel.setAmplitudeThreshold(0.78);
   signalPanel.setSmoothingTimeConstant(0);
   signalPanel.setTimeoutMilliseconds(60);
@@ -101,7 +101,7 @@ function handleWindowLoad() {
 
   availableFskPairsPanel.setFskPairs(frequencyPanel.getFskPairs());
 
-  graphConfigurationPanel.setDurationMilliseconds(signalPanel.getSegmentDuration() * 20);
+  graphConfigurationPanel.setDurationMilliseconds(signalPanel.getSegmentDurationMilliseconds() * 20);
   graphConfigurationPanel.setPauseAfterEnd(true);
 
   frequencyGraphPanel.setFskPairs(availableFskPairsPanel.getSelectedFskPairs());
@@ -132,8 +132,8 @@ function handleWindowLoad() {
   });
 
   signalPanel.addEventListener('waveformChange', updateAudioSender);
-  signalPanel.addEventListener('segmentDurationChange', (event) => { 
-    frequencyGraphPanel.setSamplingPeriod(event.value);
+  signalPanel.addEventListener('segmentDurationChange', () => { 
+    frequencyGraphPanel.setSamplingPeriod(signalPanel.getSegmentDurationMilliseconds());
     configurationChanged();
   });
   signalPanel.addEventListener('amplitudeThresholdChange', ({value}) => {
@@ -244,7 +244,7 @@ function updateAudioReceiver() {
     fskSets: availableFskPairsPanel.getSelectedFskPairs(),
     amplitudeThreshold: Math.floor(signalPanel.getAmplitudeThreshold() * 255),
     analyser: getAnalyser(),
-    signalIntervalMs: signalPanel.getSegmentDuration(),
+    signalIntervalMs: signalPanel.getSegmentDurationMilliseconds(),
     sampleRate: getAudioContext().sampleRate
   });
 }
@@ -274,7 +274,7 @@ function updatePacketUtils() {
   );
   const bitsPerSegment = availableFskPairsPanel.getSelectedFskPairs().length;
   PacketUtils.changeConfiguration({
-    segmentDurationMilliseconds: signalPanel.getSegmentDuration(),
+    segmentDurationMilliseconds: signalPanel.getSegmentDurationMilliseconds(),
     packetSizeBitCount: packetizationPanel.getSizePower(),
     dataSizeBitCount: MAXIMUM_PACKETIZATION_SIZE_BITS,
     dataSizeCrcBitCount: CRC_BIT_COUNT,
@@ -323,6 +323,7 @@ function updatePacketStats() {
   document.getElementById('segment-transfer-duration').innerText = Humanize.durationMilliseconds(PacketUtils.getSegmentDurationMilliseconds());
   document.getElementById('data-transfer-duration').innerText = Humanize.durationMilliseconds(PacketUtils.getDataTransferDurationMilliseconds(bitCount));
   document.getElementById('segments-per-packet').innerText = PacketUtils.getPacketSegmentCount().toLocaleString();
+  frequencyGraphPanel.setSamplePeriodsPerGroup(PacketUtils.getPacketSegmentCount());
   document.getElementById('total-segments').innerText = getTotalSegmentCount(bitCount).toLocaleString();
 }
 
@@ -929,7 +930,7 @@ function drawChannelData() {
 
   // Loop through visible segments
   const latestSegmentEnded = Math.min(latest, lastStreamEnded);
-  for(let time = latestSegmentEnded; time > graphEarliest; time -= signalPanel.getSegmentDuration()) {
+  for(let time = latestSegmentEnded; time > graphEarliest; time -= signalPanel.getSegmentDurationMilliseconds()) {
     // too far back?
     if(time < RECEIVED_STREAM_START_MS) break;
 
@@ -1016,7 +1017,7 @@ function drawSegmentBackground(
   width,
   height
 ) {
-  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDurationMilliseconds());
 
   const hue = 120;
   let luminance = segmentIndex % 2 === 0 ? 30 : 25;
@@ -1037,7 +1038,7 @@ function drawChannelSegmentForeground(
   expectedBit
 ) {
   const channelHeight = height / channelCount;
-  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDurationMilliseconds());
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
   let top = channelHeight * channelIndex;
   ctx.font = `${fontHeight}px Arial`;
@@ -1077,7 +1078,7 @@ function drawChannelSegmentBackground(
   if(isSelectedOrOver) luminance += 15;
 
   const channelHeight = height / channelCount;
-  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDurationMilliseconds());
   let top = channelHeight * channelIndex;
   ctx.fillStyle = `hsl(${hue}, 100%, ${luminance}%)`;
   ctx.fillRect(endX, top, segmentWidth, channelHeight);
@@ -1114,7 +1115,7 @@ function drawChannelNumbers(ctx, channelCount, width, height) {
   const offset = 0;
   const channels = availableFskPairsPanel.getSelectedFskPairs();
   const channelHeight = height / channelCount;
-  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
+  const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDurationMilliseconds());
   let fontHeight = Math.min(24, channelHeight, segmentWidth);
   ctx.font = `${fontHeight}px Arial`;
   ctx.textBaseline = 'middle';
@@ -1317,11 +1318,11 @@ function getChannelAndSegment(e) {
       };
     }
   
-    const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDuration());
+    const segmentWidth = width / (graphConfigurationPanel.getDurationMilliseconds() / signalPanel.getSegmentDurationMilliseconds());
   
     const latestSegmentEnded = Math.min(latest, lastStreamEnded);
   
-    for(let time = latestSegmentEnded; time > graphEarliest; time -= signalPanel.getSegmentDuration()) {
+    for(let time = latestSegmentEnded; time > graphEarliest; time -= signalPanel.getSegmentDurationMilliseconds()) {
       // too far back?
       if(time < RECEIVED_STREAM_START_MS) {
         return {
@@ -1331,11 +1332,11 @@ function getChannelAndSegment(e) {
       };
   
       // which segment are we looking at?
-      const segmentIndex = Math.floor(((time - RECEIVED_STREAM_START_MS) / signalPanel.getSegmentDuration()));
+      const segmentIndex = Math.floor(((time - RECEIVED_STREAM_START_MS) / signalPanel.getSegmentDurationMilliseconds()));
   
       // when did the segment begin/end
-      const segmentStart = RECEIVED_STREAM_START_MS + (segmentIndex * signalPanel.getSegmentDuration());
-      const segmentEnd = segmentStart + signalPanel.getSegmentDuration();
+      const segmentStart = RECEIVED_STREAM_START_MS + (segmentIndex * signalPanel.getSegmentDurationMilliseconds());
+      const segmentEnd = segmentStart + signalPanel.getSegmentDurationMilliseconds();
   
       // where is the segments left x coordinate?
       const leftX = ((latest - segmentEnd) / graphDuration) * width;
