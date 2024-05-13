@@ -61,3 +61,20 @@ export const bitsToInt = (bits, bitLength) => {
     2
   );
 }
+export const urlToBytes = src => {
+  const xhr = new XMLHttpRequest();
+  // we need a synchronous response.
+  xhr.open('GET', src, false);
+  xhr.overrideMimeType('text/plain; charset=x-user-defined');
+  xhr.send(null);
+  if(xhr.status !== 200) return [];
+  let bytes = [];
+  for(let i = 0; i < xhr.response.length; i++) {
+    bytes.push(xhr.response.charCodeAt(i) & 0xFF);
+  }
+  return bytes;
+}
+export const bytesToUrl = bytes => {
+  const blob = new Blob([new Uint8Array(bytes)]);
+  return URL.createObjectURL(blob);
+}

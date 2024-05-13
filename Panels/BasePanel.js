@@ -27,7 +27,16 @@ class BasePanel {
   addCheckboxes = (name, items) => {
     this.addCheckedInputs('checkbox', name, items);
   };
-  openField = name => this.addText(`${name}: `);
+  openField = (name, id) => {
+    if(id) {
+      if(this._field) throw `Unable to add field ${id} when prior field was not closed.`;
+      const field = document.createElement('span');
+      field.id = this.childId(id);
+      this.append(field);
+      this._field = field;
+    }
+    this.addText(`${name}: `)
+  };
   addText = text => this.append(document.createTextNode(text));
   addDynamicText = (id, text) => {
     const span = document.createElement('span');
@@ -35,7 +44,10 @@ class BasePanel {
     span.innerText = text;
     return this.append(span);
   }
-  closeField = () => this.addNewLine();
+  closeField = () => {
+    this._field = undefined;
+    this.addNewLine()
+  };
   addNewLine = () => this.append(document.createElement('br'));
   addDropdown = (id, items, eventName = 'change') => {
     const select = document.createElement('select');
@@ -169,7 +181,6 @@ class BasePanel {
 
   getElement = id => {
     const element = this.getDomElement().querySelector(`#${this.childId(id)}`);
-    // const element = document.getElementById(this.childId(id));
     if(!element) throw new Error(`Unable to find ${id}`);
     return element;
   }
@@ -180,12 +191,25 @@ class BasePanel {
     code.className = type === '' ? 'raw-data' : `raw-data-${type}`;
     this.append(code);
   }
+  addImage = (id, src, options) => {
+    const image = document.createElement('img');
+    image.id = this.childId(id);
+    image.src = src;
+    Object.keys(options).forEach(key => {
+      image[key] = options[key];
+    })
+    this.append(image);
+  }
   setValueById = (id, value) => {
     const element = this.getElement(id);
     switch(element.tagName) {
       case 'INPUT':
       case 'SELECT':
         element.value = value;
+        break;
+      case 'IMG':
+        element.src = value;
+        element.onload = () => URL.revokeObjectURL(value);
         break;
       default:
         element.innerText = value;
@@ -209,11 +233,21 @@ class BasePanel {
         return element.innerText;
     }
   }
+  display = (id, isDisplayed) => {
+    const element = this.getElement(id);
+    element.style.display = isDisplayed ? 'block' : 'none';
+  }
   setCheckedById = (id, checked = true) => {
     this.getElement(id).checked = !!checked;
   }
   getCheckedById = (id) => !!(this.getElement(id).checked);
-  append = (element) => this.container.appendChild(element);
+  append = (element) => {
+    if(this._field) {
+      return this._field.appendChild(element);
+    } else {
+      return this.container.appendChild(element);
+    }
+  }
   clear = () => this.container.innerHTML = '';
   addEventListener = (eventName, callback) => this.dispatcher.addListener(eventName, callback);
   removeEventListener = (eventName, callback) => this.dispatcher.removeListener(eventName, callback);

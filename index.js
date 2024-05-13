@@ -74,10 +74,10 @@ function handleWindowLoad() {
   panelContainer.prepend(speedPanel.getDomElement());
   panelContainer.prepend(graphConfigurationPanel.getDomElement());
   panelContainer.prepend(frequencyGraphPanel.getDomElement());
-  panelContainer.prepend(availableFskPairsPanel.getDomElement());
   panelContainer.prepend(packetizationPanel.getDomElement());
-  panelContainer.prepend(signalPanel.getDomElement());
+  panelContainer.prepend(availableFskPairsPanel.getDomElement());
   panelContainer.prepend(frequencyPanel.getDomElement());
+  panelContainer.prepend(signalPanel.getDomElement());
   panelContainer.prepend(bitsReceivedPanel.getDomElement());
   panelContainer.prepend(bitsSentPanel.getDomElement());
   panelContainer.prepend(messagePanel.getDomElement());
@@ -88,19 +88,20 @@ function handleWindowLoad() {
   communicationsPanel.setSendSpeakers(false);
   communicationsPanel.setSendAnalyzer(true);
 
-  messagePanel.setMessage(Randomizer.text(5));
+  messagePanel.setMessageText(Randomizer.text(5));
   messagePanel.setProgress(0);
   messagePanel.setReceived('');
+  messagePanel.setDataType('image');
   messagePanel.setSendButtonText('Send');
 
   bitsSentPanel.setCode('');
   bitsReceivedPanel.setCode('');
 
-  frequencyPanel.setMinimumFrequency(9000);
-  frequencyPanel.setMaximumFrequency(15000);
+  frequencyPanel.setMinimumFrequency(2500);
+  frequencyPanel.setMaximumFrequency(23000);
   frequencyPanel.setFftSize(2 ** 9);
-  frequencyPanel.setFskPadding(1);
-  frequencyPanel.setMultiFskPadding(1);
+  frequencyPanel.setFskPadding(3);
+  frequencyPanel.setMultiFskPadding(4);
 
   signalPanel.setWaveform('triangle');
   signalPanel.setSegmentDurationMilliseconds(30);
@@ -125,7 +126,6 @@ function handleWindowLoad() {
   frequencyGraphPanel.setAmplitudeThreshold(signalPanel.getAmplitudeThreshold());
   frequencyGraphPanel.setDurationMilliseconds(graphConfigurationPanel.getDurationMilliseconds());
 
-  speedPanel.setMaximumPackets(0);
   speedPanel.setMaximumDurationMilliseconds(0);
   speedPanel.setDataBitsPerSecond(0);
   speedPanel.setPacketizationBitsPerSecond(0);
@@ -319,43 +319,29 @@ function updatePacketUtils() {
     packetEncodingBitCount: ERROR_CORRECTION_BLOCK_SIZE,
     packetDecodingBitCount: ERROR_CORRECTION_DATA_SIZE,
   });
-  speedPanel.setMaximumPackets(PacketUtils.getMaxPackets());
   speedPanel.setMaximumDurationMilliseconds(PacketUtils.getMaxDurationMilliseconds());
   speedPanel.setDataBitsPerSecond(PacketUtils.getEffectiveBaud());
   speedPanel.setPacketizationBitsPerSecond(PacketUtils.getBaud());
   speedPanel.setTransferDurationMilliseconds(PacketUtils.getDataTransferDurationMillisecondsFromByteCount(
-    textToBytes(messagePanel.getMessage()).length
+    messagePanel.getMessageBytes().length
   ));
 
 }
 function updatePacketStats() {
-  const text = messagePanel.getMessage();
-  const bits = textToBits(text);
-  const byteCount = text.length;
+  const bytes = messagePanel.getMessageBytes();
+  const bits = bytesToBits(bytes);
+  const byteCount = bytes.length;
   const bitCount = PacketUtils.getPacketizationBitCountFromBitCount(bits.length);;
 
   // Data
-  document.getElementById('original-byte-count').innerText = textToBytes(text).length.toLocaleString();
+  document.getElementById('original-byte-count').innerText = byteCount.toLocaleString();
   document.getElementById('packetization-byte-count').innerText = PacketUtils.getPacketizationByteCountFromBitCount(bits.length).toLocaleString();
   document.getElementById('packetization-bit-count').innerText = bitCount.toLocaleString();
   document.getElementById('packet-count').innerText = PacketUtils.getPacketCount(bitCount).toLocaleString();
-  // # Packet Config
-  document.getElementById('bits-per-packet').innerText = PacketUtils.getPacketMaxBitCount().toLocaleString();
-  document.getElementById('bytes-per-packet').innerText = Humanize.byteSize(PacketUtils.getPacketMaxByteCount());
   // ## Packet Encoding
-  document.getElementById('packet-encoding').innerText = PacketUtils.isPacketEncoded() ? 'Yes' : 'No';
-  document.getElementById('packet-encoding-block-count').innerText = PacketUtils.getPacketEncodingBlockCount().toLocaleString();
-  document.getElementById('packet-encoding-bits-per-block').innerText = PacketUtils.packetEncodingBlockSize().toLocaleString();
-  document.getElementById('packet-encoding-bit-count').innerText = PacketUtils.getEncodedPacketDataBitCount().toLocaleString();
-
-  document.getElementById('bits-per-segment').innerText = PacketUtils.getBitsPerSegment();
 
   // Data
-  document.getElementById('packet-data-bit-count').innerText = PacketUtils.getPacketDataBitCount().toLocaleString();
-  document.getElementById('packet-unused-bit-count').innerText = PacketUtils.getPacketUnusedBitCount().toLocaleString();
   document.getElementById('last-packet-unused-bit-count').innerText = PacketUtils.fromByteCountGetPacketLastUnusedBitCount(byteCount).toLocaleString();
-  document.getElementById('last-segment-unused-bit-count').innerText = PacketUtils.getPacketLastSegmentUnusedBitCount().toLocaleString()
-  document.getElementById('segments-per-packet').innerText = PacketUtils.getPacketSegmentCount().toLocaleString();
   frequencyGraphPanel.setSamplePeriodsPerGroup(PacketUtils.getPacketSegmentCount());
   document.getElementById('total-segments').innerText = getTotalSegmentCount(bitCount).toLocaleString();
 }
@@ -673,9 +659,13 @@ function handleStreamManagerChange() {
   const bytes = StreamManager.getDataBytes();
   const receivedText = bytesToText(bytes);
 
-  messagePanel.setReceived(
-    receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '')
-  );
+  if(messagePanel.getDataType() === 'text') {
+    messagePanel.setReceived(
+      receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '')
+    );  
+  } else {
+    messagePanel.setReceivedBytes(bytes);
+  }
 }
 function parseTotalBitsTransferring() {
   const dataByteCount = StreamManager.getTransferByteCount();
@@ -850,8 +840,7 @@ function handleSendButtonClick() {
   if(messagePanel.getSendButtonText() === 'Stop') {
     AudioSender.stop();
   } else {
-    const text = messagePanel.getMessage();
-    sendBytes(textToBytes(text));
+    sendBytes(messagePanel.getMessageBytes());
   }
 }
 function getAnalyser() {

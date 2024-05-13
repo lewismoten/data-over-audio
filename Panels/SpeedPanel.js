@@ -20,18 +20,13 @@ class SpeedPanel extends BasePanel {
     this.addDynamicText('transfer-duration', 'n/a');
     this.closeField();
 
-    this.addSection('Maximum');
-
-    this.openField('Packets');
-    this.addDynamicText('max-packets', 'n/a');
-    this.closeField();
+    this.addSection('Maximum Data');
 
     this.openField('Duration');
     this.addDynamicText('max-duration', 'n/a');
     this.closeField();
   };
 
-  setMaximumPackets = (count) => this.setValueById('max-packets', count.toLocaleString());
   setMaximumDurationMilliseconds = (milliseconds) => this.setValueById('max-duration', Humanize.durationMilliseconds(milliseconds));
   setPacketizationBitsPerSecond = (bps) => this.setValueById('bps-packetization', Humanize.bitsPerSecond(bps));
   setDataBitsPerSecond = (bps) => this.setValueById('bps-data', Humanize.bitsPerSecond(bps));
