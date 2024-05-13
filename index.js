@@ -29,6 +29,7 @@ import {
   textToBits,
   textToBytes,
 } from './converters';
+import MicrophonePanel from "./Panels/MicrophonePanel";
 var audioContext;
 var microphoneStream;
 var microphoneNode;
@@ -68,6 +69,7 @@ const availableFskPairsPanel = new AvailableFskPairsPanel();
 const frequencyGraphPanel = new FrequencyGraphPanel();
 const graphConfigurationPanel = new GraphConfigurationPanel();
 const speedPanel = new SpeedPanel();
+const microphonePanel = new MicrophonePanel();
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
@@ -82,9 +84,11 @@ function handleWindowLoad() {
   panelContainer.prepend(bitsSentPanel.getDomElement());
   panelContainer.prepend(messagePanel.getDomElement());
   panelContainer.prepend(communicationsPanel.getDomElement());
+  panelContainer.prepend(microphonePanel.getDomElement());
 
   // Initialize Values
-  communicationsPanel.setListening(false);
+  microphonePanel.setListening(false);
+
   communicationsPanel.setSendSpeakers(false);
   communicationsPanel.setSendAnalyzer(true);
 
@@ -135,7 +139,6 @@ function handleWindowLoad() {
 
 
   // Events
-  communicationsPanel.addEventListener('listeningChange', handleChangeListening);
   communicationsPanel.addEventListener('sendSpeakersChange', handleChangeSendSpeakers);
   communicationsPanel.addEventListener('sendAnalyzerChange', handleChangeSendAnalyzer);
 
@@ -554,7 +557,7 @@ function stopGraph() {
 }
 
 function resumeGraph() {
-  if(communicationsPanel.isListeningChecked()) {
+  if(microphonePanel.getListening()) {
     if(PAUSE) {
       PAUSE = false;
       AudioReceiver.start();
@@ -830,6 +833,7 @@ function getAudioContext() {
     audioContext = new (window.AudioContext || webkitAudioContext)();
     frequencyPanel.setSampleRate(audioContext.sampleRate);
     availableFskPairsPanel.setSampleRate(audioContext.sampleRate);
+    microphonePanel.setAudioContext(audioContext);
   }
   if(audioContext.state === 'suspended') {
     audioContext.resume();
@@ -847,6 +851,8 @@ function getAnalyser() {
   if(analyser) return analyser;
   analyser = audioContext.createAnalyser();
   frequencyGraphPanel.setAnalyser(analyser);
+  microphonePanel.setAnalyser(analyser);
+
   analyser.smoothingTimeConstant = signalPanel.getSmoothingTimeConstant();
   analyser.fftSize = frequencyPanel.getFftSize();
   return analyser;
@@ -858,51 +864,6 @@ function handleChangeSendAnalyzer({checked}) {
 function handleChangeSendSpeakers({checked}) {
   SEND_VIA_SPEAKER = checked;
   configurationChanged();
-}
-function handleChangeListening({checked}) {
-  stopGraph();
-  var audioContext = getAudioContext();
-  function handleMicrophoneOn(stream) {
-    microphoneStream = stream;
-    microphoneNode = audioContext.createMediaStreamSource(stream);
-    analyser = getAnalyser();
-    microphoneNode.connect(analyser);
-    resumeGraph();
-  }
-  function handleMicrophoneError(error) {
-    console.error('Microphone Error', error);
-  }
-  if(checked) {
-    navigator.mediaDevices
-      .getUserMedia({
-        audio: {
-          mandatory: {
-            autoGainControl: false,
-            echoCancellation: false,
-            noiseSuppression: false,
-            suppressLocalAudioPlayback: false,
-            voiceIsolation: false
-          },
-          optional: []
-        }
-      })
-      .then(handleMicrophoneOn)
-      .catch(handleMicrophoneError)
-  } else {
-    if(microphoneStream) {
-      microphoneStream.getTracks().forEach(track => track.stop());
-      microphoneStream = undefined;
-    }
-    if(analyser && microphoneNode) {
-      try {
-        analyser.disconnect(microphoneNode);
-      } catch(e) {
-
-      }
-      microphoneNode = undefined;
-      analyser = undefined;
-    }
-  }
 }
 
 function drawChannelData() {
