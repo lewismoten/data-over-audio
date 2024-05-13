@@ -21,27 +21,25 @@ class MessagePanel extends BasePanel {
     this.addImage('image-to-send', 'interlaced-sample.gif', {eventName: 'messageChange'});
     this.closeField();
 
-    this.addButton('send-button', 'Send', 'send');    
+    this.addButton('send-button', 'Send', 'send-button-click');    
     this.addNewLine();
 
     this.openField('Bytes');
     this.addDynamicText('bytes', 0);
     this.closeField();
 
-    this.addSection('Received');
-
-    this.addCode('decoded-text', '', 'small');
-    this.addImage('decoded-image', undefined, {width: 32, height: 32});
-
-    this.addProgressBar('received-progress', .50);
+    this.addEventListener('send-button-click', () => {
+      if(this.getSendButtonText() === 'Send') {
+        this.dispatcher.emit('sendClick');
+      } else {
+        this.dispatcher.emit('stopClick');
+      }
+    })
 
     this.addEventListener('dataTypeChange', ({values: [value]}) => {
-      this.display('field-text', value === 'text');
-      this.display('field-image', value === 'image');
-      this.display('decoded-image', value === 'image');
-      this.display('decoded-text', value==='text');
-      // should be 487 bytes
       this.setValueById('bytes', byteSize(this.getMessageBytes().length));
+      this.display('field-image', value === 'image');
+      this.display('field-text', value === 'text');
     });
     this.addEventListener('messageChange', e => {
       this.setValueById('bytes', byteSize(this.getMessageBytes().length));
@@ -62,19 +60,11 @@ class MessagePanel extends BasePanel {
       return urlToBytes(this.getElement('image-to-send').src);
     }
   }
-  setProgress = percent => this.setProgressById('received-progress', percent);
-  setReceived = (html) => this.setHtmlById('decoded-text', html);
-  setReceivedBytes = bytes => {
-    if(this.getDataType() === 'text') {
-      this.setReceived(bytesToText(bytes));
-    } else {
-      this.setValueById('decoded-image', bytesToUrl(bytes));
-    }
-  }
 
   getDataType = () => this.getValueById('data-type');
   setDataType = (value) => {
     this.setValueById('data-type', value);
+
     this.dispatcher.emit('dataTypeChange', {values: [value]});
   }
 }

@@ -117,15 +117,12 @@ export function stopAt(streamEndSeconds) {
 }
 export function stop() {
   const oscillators = getOscillators();
-  if(this.audioContext) {
-    const time = now();
-    oscillators.forEach(
-      oscillator => {
-        oscillator?.stop(time);
-        oscillator?.disconnect();
-      }
-    )
-  }
+  oscillators.forEach(
+    oscillator => {
+      oscillator?.stop();
+      oscillator?.disconnect();
+    }
+  )
   oscillators.length = 0;
   futureEventIds.forEach(window.clearTimeout);
   futureEventIds.length = 0;

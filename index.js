@@ -30,6 +30,7 @@ import {
   textToBytes,
 } from './converters';
 import MicrophonePanel from "./Panels/MicrophonePanel";
+import ReceivePanel from "./Panels/ReceivePanel";
 var audioContext;
 var microphoneStream;
 var microphoneNode;
@@ -70,6 +71,7 @@ const frequencyGraphPanel = new FrequencyGraphPanel();
 const graphConfigurationPanel = new GraphConfigurationPanel();
 const speedPanel = new SpeedPanel();
 const microphonePanel = new MicrophonePanel();
+const receivePanel = new ReceivePanel();
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
@@ -82,9 +84,10 @@ function handleWindowLoad() {
   panelContainer.prepend(signalPanel.getDomElement());
   panelContainer.prepend(bitsReceivedPanel.getDomElement());
   panelContainer.prepend(bitsSentPanel.getDomElement());
-  panelContainer.prepend(messagePanel.getDomElement());
-  panelContainer.prepend(communicationsPanel.getDomElement());
+  panelContainer.prepend(receivePanel.getDomElement());
   panelContainer.prepend(microphonePanel.getDomElement());
+  panelContainer.prepend(communicationsPanel.getDomElement());
+  panelContainer.prepend(messagePanel.getDomElement());
 
   // Initialize Values
   microphonePanel.setListening(false);
@@ -93,10 +96,15 @@ function handleWindowLoad() {
   communicationsPanel.setSendAnalyzer(true);
 
   messagePanel.setMessageText(Randomizer.text(5));
-  messagePanel.setProgress(0);
-  messagePanel.setReceived('');
   messagePanel.setDataType('image');
   messagePanel.setSendButtonText('Send');
+
+  messagePanel.addEventListener('dataTypeChange', ({values: [dataType]}) => {
+    receivePanel.setDataType(dataType);
+  })
+  receivePanel.setDataType(messagePanel.getDataType());
+  receivePanel.setProgress(0);
+  receivePanel.setReceivedHtml('Ready.');
 
   bitsSentPanel.setCode('');
   bitsReceivedPanel.setCode('');
@@ -143,7 +151,8 @@ function handleWindowLoad() {
   communicationsPanel.addEventListener('sendAnalyzerChange', handleChangeSendAnalyzer);
 
   messagePanel.addEventListener('messageChange', configurationChanged);
-  messagePanel.addEventListener('send', handleSendButtonClick);
+  messagePanel.addEventListener('sendClick', handleSendButtonClick);
+  messagePanel.addEventListener('stopClick', handleStopButtonClick);
 
   frequencyPanel.addEventListener('minimumFrequencyChange', configurationChanged);
   frequencyPanel.addEventListener('maximumFrequencyChange', configurationChanged);
@@ -196,14 +205,14 @@ function handleWindowLoad() {
     frequencyGraphPanel.setDurationMilliseconds(graphConfigurationPanel.getDurationMilliseconds());
   });
 
+  receivePanel.addEventListener('start', handleReceivePanelStart);
+  receivePanel.addEventListener('receive', handleReceivePanelReceive);
+  receivePanel.addEventListener('end', handleReceivePanelEnd);
+
   // Setup audio sender
   AudioSender.addEventListener('begin', () => messagePanel.setSendButtonText('Stop'));
   AudioSender.addEventListener('send', handleAudioSenderSend);
   AudioSender.addEventListener('end', () => messagePanel.setSendButtonText('Send'));
-  // Setup audio receiver
-  AudioReceiver.addEventListener('begin', handleAudioReceiverStart);
-  AudioReceiver.addEventListener('receive', handleAudioReceiverReceive);
-  AudioReceiver.addEventListener('end', handleAudioReceiverEnd);
   // Setup stream manager
   StreamManager.addEventListener('change', handleStreamManagerChange);
 
@@ -249,24 +258,23 @@ function updateAudioSender() {
     waveForm: signalPanel.getWaveform()
   });
 }
-const handleAudioReceiverStart = ({signalStart}) => {
-  StreamManager.reset();
+const handleReceivePanelStart = ({signalStart}) => {
   frequencyGraphPanel.setSignalStart(signalStart);
   RECEIVED_STREAM_START_MS = signalStart;
 }
-const handleAudioReceiverReceive = ({signalStart, signalIndex, indexStart, bits}) => {
+const handleReceivePanelReceive = ({signalStart, signalIndex, indexStart, bits}) => {
   const packetIndex = PacketUtils.getPacketIndex(signalStart, indexStart);
   const segmentIndex = PacketUtils.getPacketSegmentIndex(signalStart, indexStart);
   // Getting all 1's for only the first 5 segments?
   // console.log(signalIndex, packetIndex, segmentIndex, bits.join(''));
   StreamManager.addBits(packetIndex, segmentIndex, bits);
 }
-const handleAudioReceiverEnd = (e) => {
+const handleReceivePanelEnd = (e) => {
   frequencyGraphPanel.setSignalEnd(e.signalEnd);
   if(graphConfigurationPanel.getPauseAfterEnd()) {
     stopGraph();
     frequencyGraphPanel.stop();
-    AudioSender.stop();
+    receivePanel.setIsOnline(false);
   }
 }
 function updateAudioReceiver() {
@@ -406,10 +414,6 @@ function sendBytes(bytes) {
     document.getElementById('sent-data').innerText = `Attempted to send too much data. Limit is ${Humanize.byteSize(packetizationPanel.getDataSize())}. Tried to send ${Humanize.byteSize(byteCount)}`;
     return;
   }
-
-  AudioReceiver.reset();
-  StreamManager.reset();
-  frequencyGraphPanel.start();
 
   const bits = bytesToBits(bytes);
 
@@ -553,14 +557,14 @@ function padArray(values, length, value) {
 
 function stopGraph() {
   PAUSE = true;
-  AudioReceiver.stop();
+  receivePanel.setIsOnline(false);
 }
 
 function resumeGraph() {
   if(microphonePanel.getListening()) {
     if(PAUSE) {
       PAUSE = false;
-      AudioReceiver.start();
+      receivePanel.setIsOnline(true);
       resetGraphData();
       requestAnimationFrame(drawFrequencyData);  
     } else {
@@ -610,7 +614,7 @@ function handleStreamManagerChange() {
   const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === SENT_ORIGINAL_BITS[i]).length;
 
   let percentReceived = StreamManager.sumTotalBits() / totalBitsTransferring;
-  messagePanel.setProgress(percentReceived);
+  receivePanel.setProgress(percentReceived);
 
   bitsReceivedPanel.setCode(allRawBits
     .reduce(
@@ -663,11 +667,11 @@ function handleStreamManagerChange() {
   const receivedText = bytesToText(bytes);
 
   if(messagePanel.getDataType() === 'text') {
-    messagePanel.setReceived(
+    receivePanel.setReceivedHtml(
       receivedText.split('').reduce(textExpectorReducer(SENT_ORIGINAL_TEXT), '')
     );  
   } else {
-    messagePanel.setReceivedBytes(bytes);
+    receivePanel.setReceivedBytes(bytes);
   }
 }
 function parseTotalBitsTransferring() {
@@ -840,12 +844,11 @@ function getAudioContext() {
   }
   return audioContext;
 }
+function handleStopButtonClick() {
+  AudioSender.stop();
+}
 function handleSendButtonClick() {
-  if(messagePanel.getSendButtonText() === 'Stop') {
-    AudioSender.stop();
-  } else {
-    sendBytes(messagePanel.getMessageBytes());
-  }
+  sendBytes(messagePanel.getMessageBytes());
 }
 function getAnalyser() {
   if(analyser) return analyser;
