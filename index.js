@@ -145,8 +145,6 @@ function handleWindowLoad() {
   speedPanel.setPacketizationBitsPerSecond(0);
   speedPanel.setTransferDurationMilliseconds(0);
 
-  AudioReceiver.setTimeoutMilliseconds(signalPanel.getTimeoutMilliseconds());
-
 
   // Events
   communicationsPanel.addEventListener('sendSpeakersChange', handleChangeSendSpeakers);
@@ -184,9 +182,9 @@ function handleWindowLoad() {
 
   packetizationPanel.addEventListener('sizePowerChange', configurationChanged);
   packetizationPanel.addEventListener('interleavingChange', () => {
-    StreamManager.setSegmentEncoding(
-      packetizationPanel.getInterleaving() ? InterleaverEncoding : undefined
-    );
+    const encoding = packetizationPanel.getInterleaving() ? InterleaverEncoding : undefined;
+    AudioReceiver.setSampleEncoding(encoding);
+    AudioSender.setSampleEncoding(encoding)
     configurationChanged();
   });
   packetizationPanel.addEventListener('errorCorrectionChange', configurationChanged);
@@ -195,6 +193,11 @@ function handleWindowLoad() {
   packetizationPanel.addEventListener('dataCrcChange', configurationChanged);
   packetizationPanel.addEventListener('packetCrcChange', configurationChanged);
   packetizationPanel.addEventListener('sequenceNumberPowerChange', configurationChanged);
+
+  AudioReceiver.setTimeoutMilliseconds(signalPanel.getTimeoutMilliseconds());
+  const encoding = packetizationPanel.getInterleaving() ? InterleaverEncoding : undefined;
+  AudioReceiver.setSampleEncoding(encoding);
+  AudioSender.setSampleEncoding(encoding)
 
   availableFskPairsPanel.addEventListener('change', (event) => {
     frequencyGraphPanel.setFskPairs(event.selected);
@@ -477,21 +480,23 @@ function sendBytes(bytes) {
 
   const packer = PacketUtils.pack(bits);
 
-  AudioSender.beginAt(startSeconds);
-  // send all packets
-  for(let i = 0; i < packetCount; i++) {
-    let packet = packer.getBits(i);
-    SENT_ENCODED_BITS.push(...packet);
-    if(packet.length > packetBitCount) {
-      console.error('Too many bits in the packet. tried to send %s, limited to %s', packet.length, packetBitCount);
-      AudioSender.stop();
-      return;
+  try {
+    AudioSender.beginAt(startSeconds);
+    // send all packets
+    for(let i = 0; i < packetCount; i++) {
+      let packet = packer.getBits(i);
+      if(packet.length > packetBitCount) {
+        throw new Error(`Too many bits in the packet. tried to send ${packet.length}, limited to ${packetBitCount}`);
+      }
+      packet.push(...new Array(packetBitCount - packet.length).fill(0));
+      sendPacket(packet, startSeconds + (i * packetDurationSeconds));
     }
-    packet = padArray(packet, packetBitCount, 0);
-    sendPacket(packet, startSeconds + (i * packetDurationSeconds));
+    AudioSender.stopAt(startSeconds + totalDurationSeconds);
+  } catch (e) {
+    console.error(e);
+    AudioSender.stop();
+    return;
   }
-  AudioSender.stopAt(startSeconds + totalDurationSeconds);
-
   showSentBits();
 
   // start the graph moving again
@@ -531,8 +536,8 @@ function sendPacket(bits, packetStartSeconds) {
   const segmentDurationSeconds = PacketUtils.getSegmentDurationSeconds();
   for(let i = 0; i < bitCount; i += channelCount) {
     let segmentBits = bits.slice(i, i + channelCount);
-    if(packetizationPanel.getInterleaving()) {
-      segmentBits = InterleaverEncoding.encode(segmentBits);
+    if(segmentBits.length !== channelCount) {
+      segmentBits.push(...new Array(channelCount - segmentBits.length).fill(0))
     }
     const segmentIndex = Math.floor(i / channelCount);
     var offsetSeconds = segmentIndex * segmentDurationSeconds;

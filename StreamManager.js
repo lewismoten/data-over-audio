@@ -20,10 +20,6 @@ let BITS_PER_PACKET = 0;
 let SEGMENTS_PER_PACKET = 0;
 let BITS_PER_SEGMENT = 0;
 let STREAM_HEADERS = [];
-let SEGMENT_ENCODING = {
-  encode: bits => bits,
-  decode: bits => bits
-};
 let PACKET_ENCODING = {
   encode: bits => bits,
   decode: bits => bits
@@ -111,10 +107,6 @@ export const changeConfiguration = ({
   STREAM_HEADERS = streamHeaders;
 }
 const noEncoding = bits => bits;
-export const setSegmentEncoding = ({ encode, decode } = {}) => {
-  SEGMENT_ENCODING.encode = encode ?? noEncoding;
-  SEGMENT_ENCODING.decode = decode ?? noEncoding;
-}
 export const setPacketEncoding = ({ encode, decode } = {}) => {
   PACKET_ENCODING.encode = encode ?? noEncoding;
   PACKET_ENCODING.decode = decode ?? noEncoding;
@@ -171,7 +163,6 @@ export const getPacketBits = (packetIndex, defaultBit = 0) => {
   const packet = BITS[packetIndex] ?? [];
   for(let segmentIndex = 0; segmentIndex < SEGMENTS_PER_PACKET; segmentIndex++) {
     let segment = packet[segmentIndex] ?? [];
-    segment = SEGMENT_ENCODING.decode(segment);
     for(let bitIndex = 0; bitIndex < BITS_PER_SEGMENT; bitIndex++) {
       const bit = segment[bitIndex];
       bits.push(bit ?? defaultBit);

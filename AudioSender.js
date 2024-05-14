@@ -1,6 +1,11 @@
 import Dispatcher from "./Dispatcher";
 
 const dispatcher = new Dispatcher('AudioSender', ['begin', 'end', 'send']);
+const noEncoding = bits => bits;
+let SAMPLE_ENCODING = {
+  encode: noEncoding,
+  decode: noEncoding
+};
 
 let audioContext;
 let CHANNELS = [];
@@ -14,6 +19,11 @@ let stopOscillatorsTimeoutId;
 
 export const addEventListener = dispatcher.addListener;
 export const removeEventListener = dispatcher.removeListener;
+
+export const setSampleEncoding = ({ encode, decode } = {}) => {
+  SAMPLE_ENCODING.encode = encode ?? noEncoding;
+  SAMPLE_ENCODING.decode = decode ?? noEncoding;
+}
 
 export const changeConfiguration = ({
   channels,
@@ -65,9 +75,17 @@ function getOscillators() {
   return CHANNEL_OSCILLATORS;
 }
 export function send(bits, startSeconds) {
+  const fskPairs = getChannels();
+  if(bits.length < fskPairs.length) {
+    throw new Error(`Expected ${fskPairs.length} bits. Received ${bits.length}.`)
+    bits.push(...new Array(fskPairs.length - bits.length).fill(0));
+  } else if(bits.length > fskPairs.length) {
+    throw new Error(`Invalid bit length. Expected ${fskPairs.length}, but got ${bits.lengt}`);
+  }
+  bits = SAMPLE_ENCODING.encode(bits);
   const oscillators = getOscillators();
   const sentBits = [];
-  getChannels().forEach((channel, i) => {
+  fskPairs.forEach((fsk, i) => {
     // send missing bits as zero
     const isHigh = bits[i] ?? 0;
     sentBits.push(isHigh);
@@ -75,7 +93,7 @@ export function send(bits, startSeconds) {
     // already at correct frequency
     if(oscillator.on === isHigh) return;
     oscillator.on = isHigh;
-    const hz = channel[isHigh ? 1 : 0];
+    const hz = fsk[isHigh ? 1 : 0];
     oscillator.frequency.setValueAtTime(hz, startSeconds);
   });
 

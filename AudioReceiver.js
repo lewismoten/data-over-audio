@@ -1,6 +1,11 @@
 import Dispatcher from "./Dispatcher";
 
 const dispatcher = new Dispatcher('AudioReceiver', ['begin', 'end', 'receive']);
+const noEncoding = bits => bits;
+let SAMPLE_ENCODING = {
+  encode: noEncoding,
+  decode: noEncoding
+};
 
 let sampleIntervalIds = [];
 let SAMPLE_LAST_COLLECTED = 0;
@@ -26,6 +31,11 @@ const setTimeoutMilliseconds = (milliseconds) => {
     signalTimeoutId = window.setTimeout(handleSignalLost, SIGNAL_TIMEOUT_MS, LAST_SIGNAL_BEFORE_TIMEOUT);
   }
 }
+export const setSampleEncoding = ({ encode, decode } = {}) => {
+  SAMPLE_ENCODING.encode = encode ?? noEncoding;
+  SAMPLE_ENCODING.decode = decode ?? noEncoding;
+}
+
 const changeConfiguration = ({
   fskSets,
   signalIntervalMs,
@@ -154,7 +164,8 @@ function processSample({ signalStart, index }) {
   const samples = SAMPLES.filter(isSegment);
   if(samples.length === 0) return;
 
-  let bits = evaluateBits(samples);
+  let bits = SAMPLE_ENCODING.decode(evaluateBits(samples));
+
   const { start, end } = samples[0];
   dispatcher.emit('receive', {
     signalStart,
