@@ -125,6 +125,8 @@ function handleWindowLoad() {
   packetizationPanel.setDataSizePower(16);
   packetizationPanel.setDataSizeCrc(8);
   packetizationPanel.setDataCrc(16);
+  packetizationPanel.setPacketCrc(8);
+  packetizationPanel.setSequenceNumberPower(16);
 
   packetizationPanel.setErrorCorrection(true);
   packetizationPanel.setInterleaving(true);
@@ -191,6 +193,8 @@ function handleWindowLoad() {
   packetizationPanel.addEventListener('dataSizePowerChange', configurationChanged);
   packetizationPanel.addEventListener('dataSizeCrcChange', configurationChanged);
   packetizationPanel.addEventListener('dataCrcChange', configurationChanged);
+  packetizationPanel.addEventListener('packetCrcChange', configurationChanged);
+  packetizationPanel.addEventListener('sequenceNumberPowerChange', configurationChanged);
 
   availableFskPairsPanel.addEventListener('change', (event) => {
     frequencyGraphPanel.setFskPairs(event.selected);
@@ -265,9 +269,7 @@ const handleReceivePanelStart = ({signalStart}) => {
 const handleReceivePanelReceive = ({signalStart, signalIndex, indexStart, bits}) => {
   const packetIndex = PacketUtils.getPacketIndex(signalStart, indexStart);
   const segmentIndex = PacketUtils.getPacketSegmentIndex(signalStart, indexStart);
-  // Getting all 1's for only the first 5 segments?
-  // console.log(signalIndex, packetIndex, segmentIndex, bits.join(''));
-  StreamManager.addBits(packetIndex, segmentIndex, bits);
+  StreamManager.addSample(packetIndex, segmentIndex, bits);
 }
 const handleReceivePanelEnd = (e) => {
   frequencyGraphPanel.setSignalEnd(e.signalEnd);
@@ -329,6 +331,8 @@ function updatePacketUtils() {
     packetEncoding: packetizationPanel.getErrorCorrection(),
     packetEncodingBitCount: ERROR_CORRECTION_BLOCK_SIZE,
     packetDecodingBitCount: ERROR_CORRECTION_DATA_SIZE,
+    packetSequenceNumberBitCount: packetizationPanel.getSequenceNumberPower(),
+    packetCrcBitCount: packetizationPanel.getPacketCrc()
   });
   speedPanel.setMaximumDurationMilliseconds(PacketUtils.getMaxDurationMilliseconds());
   speedPanel.setDataBitsPerSecond(PacketUtils.getEffectiveBaud());
@@ -446,20 +450,17 @@ function sendBytes(bytes) {
     dataCrcNumber = CRC.check(bytes, dataCrcBitLength);
     dataCrcBits = numberToBits(dataCrcNumber, dataCrcBitLength);
   } 
-  console.log('sending headers', {
-    // dataLengthBits,
-    // dataLengthCrcBits,
-    // dataCrcBits,
-    dataCrcHex: numberToHex(packetizationPanel.getDataCrc())(dataCrcNumber),
-    dataSizeCrcHex: numberToHex(packetizationPanel.getDataSizeCrc())(dataSizeCrcNumber),
-  })
-
-  // prefix with headers
-  bits.unshift(
+  const headers = [
     ...dataLengthBits,
     ...dataLengthCrcBits,
     ...dataCrcBits
-  );
+  ];
+  // pad headers to take full bytes
+  while(headers.length % 8 !== 0) {
+    headers.push(0);
+  }
+  // prefix bits with headers
+  bits.unshift(...headers);
 
   const bitCount = bits.length;
 
@@ -474,10 +475,12 @@ function sendBytes(bytes) {
   const packetCount = PacketUtils.getPacketCount(bitCount);
   const totalDurationSeconds = PacketUtils.getDataTransferDurationSeconds(bitCount);
 
+  const packer = PacketUtils.pack(bits);
+
   AudioSender.beginAt(startSeconds);
   // send all packets
   for(let i = 0; i < packetCount; i++) {
-    let packet = PacketUtils.getPacketBits(bits, i);
+    let packet = packer.getBits(i);
     SENT_ENCODED_BITS.push(...packet);
     if(packet.length > packetBitCount) {
       console.error('Too many bits in the packet. tried to send %s, limited to %s', packet.length, packetBitCount);
@@ -576,92 +579,8 @@ function resumeGraph() {
 }
 
 function handleStreamManagerChange() {
-  const channelCount = availableFskPairsPanel.getSelectedFskPairs().length;
-  let allRawBits = StreamManager.getStreamBits();
-  let allEncodedBits = StreamManager.getAllPacketBits();
-  let allDecodedBits = StreamManager.getAllPacketBitsDecoded();
 
-  // get packet data before removing decoded bits
-  const transmissionByteCount = StreamManager.getTransferByteCount();
-  const transmissionByteCountCrc = StreamManager.getTransferByteCountCrc();
-  const transmissionByteCountActualCrc = StreamManager.getTransferByteCountActualCrc();
-
-  const trustedLength = StreamManager.isTransferByteCountTrusted();
-  const totalBitsTransferring = parseTotalBitsTransferring(allDecodedBits);
-
-  const transmissionDataCrc = StreamManager.getTransferDataCrc();
-  const transmissionDataActualCrc = StreamManager.getTransferActualDataCrc();
-  const transmissionCrc = document.getElementById('received-packet-original-data-crc');
-  transmissionCrc.innerText = numberToHex(packetizationPanel.getDataCrc())(transmissionDataCrc);
-  const trustedData = StreamManager.isTransferDataTrusted();
-  transmissionCrc.className = trustedData ? 'bit-correct' : 'bit-wrong';
-  if(!trustedData) {
-    transmissionCrc.innerText += ' (Expected ' + numberToHex(packetizationPanel.getDataCrc())(transmissionDataActualCrc) + ')';
-  }
-
-  // reduce all decoded bits based on original data sent
-  allDecodedBits = removeDecodedHeadersAndPadding(allDecodedBits);
-
-  // reduce encoded bits based on original data sent
-  allEncodedBits = removeEncodedPadding(allEncodedBits);
-
-  const encodedBitCount = SENT_ENCODED_BITS.length;
-  const decodedBitCount = SENT_ORIGINAL_BITS.length;
-  const rawBitCount = SENT_TRANSFER_BITS.length;
-
-  const correctRawBits = allRawBits.filter((b, i) => i < rawBitCount && b === SENT_TRANSFER_BITS[i]).length;
-  const correctEncodedBits = allEncodedBits.filter((b, i) => i < encodedBitCount && b === SENT_ENCODED_BITS[i]).length;
-  const correctedDecodedBits = allDecodedBits.filter((b, i) => i < decodedBitCount && b === SENT_ORIGINAL_BITS[i]).length;
-
-  let percentReceived = StreamManager.sumTotalBits() / totalBitsTransferring;
-  receivePanel.setProgress(percentReceived);
-
-  bitsReceivedPanel.setCode(allRawBits
-    .reduce(
-      bitExpectorReducer(
-        SENT_TRANSFER_BITS,
-        PacketUtils.getPacketMaxBitCount() + PacketUtils.getPacketLastSegmentUnusedBitCount(),
-        channelCount,
-        (packetIndex, blockIndex) => `${blockIndex === 0 ? '' : '<br>'}Segment ${blockIndex}: `
-      ),
-    ''));
-    if(packetizationPanel.getErrorCorrection()) {
-      document.getElementById('received-encoded-bits').innerHTML = allEncodedBits
-      .reduce(
-        bitExpectorReducer(
-          SENT_ENCODED_BITS,
-          PacketUtils.getPacketDataBitCount(),
-          ERROR_CORRECTION_BLOCK_SIZE
-        ),
-      '');
-    } else {
-      document.getElementById('received-encoded-bits').innerHTML = 'Not encoded.';
-    }
-  document.getElementById('received-decoded-bits').innerHTML = allDecodedBits
-    .reduce(
-      bitExpectorReducer(
-        SENT_ORIGINAL_BITS,
-        PacketUtils.getPacketDataBitCount(),
-        packetizationPanel.getErrorCorrection() ? ERROR_CORRECTION_DATA_SIZE : 8
-      ),
-    '');
-  document.getElementById('received-packet-original-bytes').innerText = transmissionByteCount.toLocaleString();
-  const packetCrc = document.getElementById('received-packet-original-bytes-crc');
-  packetCrc.innerText = numberToHex(packetizationPanel.getDataSizeCrc())(transmissionByteCountCrc);
-  packetCrc.className = trustedLength ? 'bit-correct' : 'bit-wrong';
-  if(!trustedLength) {
-    packetCrc.innerText += ' (Expected ' + numberToHex(packetizationPanel.getDataSizeCrc())(transmissionByteCountActualCrc) + ')';
-  }
-
-  document.getElementById('received-encoded-bits-error-percent').innerText = (
-    Math.floor((1 - (correctEncodedBits / allEncodedBits.length)) * 10000) * 0.01
-  ).toLocaleString();
-  document.getElementById('received-raw-bits-error-percent').innerText = (
-    Math.floor((1 - (correctRawBits / allRawBits.length)) * 10000) * 0.01
-  ).toLocaleString();
-  document.getElementById('received-decoded-bits-error-percent').innerText = (
-    Math.floor((1 - (correctedDecodedBits / allDecodedBits.length)) * 10000) * 0.01
-  ).toLocaleString();
+  receivePanel.setProgress(StreamManager.getPercentReceived());
 
   const bytes = StreamManager.getDataBytes();
   const receivedText = bytesToText(bytes);
