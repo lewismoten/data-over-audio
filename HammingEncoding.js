@@ -24,30 +24,40 @@ export const decode = bits => {
   return decodedBits;
 }
 
-const encodeBlock = bits => {
-  if(bits.length !== DECODED_SIZE) return [];
+const encodeBlock = ([a = 0, b = 0, c = 0, d = 0]) => {
+  // embed parity bits
   return [
-    bits[0] ^ bits[1] ^ bits[3],
-    bits[0] ^ bits[2] ^ bits[3],
-    bits[0],
-    bits[1] ^ bits[2] ^ bits[3],
-    bits[1],
-    bits[2],
-    bits[3]
+    a ^ b ^ d,
+    a ^ c ^ d,
+    a,
+    b ^ c ^ d,
+    b,
+    c,
+    d
   ]
 }
 
-const decodeBlock = bits => {
-  if(bits.length !== ENCODED_SIZE) return [];
-  const error_1 = bits[0] ^ bits[2] ^ bits[4] ^ bits[6];
-  const error_2 = bits[1] ^ bits[2] ^ bits[5] ^ bits[6];
-  const error_3 = bits[3] ^ bits[4] ^ bits[5] ^ bits[6];
-  let error = (error_3 << 2) | (error_2 << 1) | error_1;
-  if(error !== 0) bits[error - 1] ^= 1;
-  return [
-    bits[2],
-    bits[4],
-    bits[5],
-    bits[6]
-  ];
+const decodeBlock = ([
+  p0 = 0,
+  p1 = 0,
+  a = 0,
+  p2 = 0,
+  b = 0,
+  c = 0,
+  d = 0
+]) => {
+  // check parity bits
+  const e0 = p0 ^ a ^ b ^ d;
+  const e1 = p1 ^ a ^ c ^ d;
+  const e2 = p2 ^ b ^ c ^ d;
+  let error = (e2 << 2) | (e1 << 1) | e0;
+  // flip the bit
+  switch(error) {
+    case 0b011: a ^= 1; break;
+    case 0b101: b ^= 1; break;
+    case 0b110: c ^= 1; break;
+    case 0b111: d ^= 1; break;
+    default: break;
+  }
+  return [a, b, c, d];
 }
