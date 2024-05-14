@@ -1,5 +1,21 @@
+export const number = (value) => value.toLocaleString();
+export const metricNumber = value => {
+  let unitIndex = 0;
+  const units = ['', 'k', 'm', 'g', 't', 'p'];
+
+  while(value >= 1000) {
+    value /= 1000;
+    unitIndex++;
+    if(unitIndex === units.length - 1) break;
+  }
+  value = Math.floor(value * 10) * 0.1
+  return `${number(value)} ${units[unitIndex]}`
+}
 export function byteSize(count) {
   if(count === 0) return 'none';
+  if(count === Infinity) return Infinity;
+  if(count === -Infinity) return -Infinity;
+
   let unitIndex = 0;
   const units = ['bytes', 'kb', 'mb', 'gb', 'tb', 'pb'];
   while(count > 999) {
@@ -8,22 +24,18 @@ export function byteSize(count) {
     if(unitIndex === units.length - 1) break;
   }
   count = Math.floor(count * 10) * 0.1
-  return `${count.toLocaleString()} ${units[unitIndex]}`
+  return `${number(count)} ${units[unitIndex]}`
 }
 export function hertz(hz) {
   if(hz === 0) return 'none';
-  let unitIndex = 0;
-  const units = ['Hz', 'kHz', 'mHz', 'gHz', 'tHz', 'pHz'];
-  while(hz >= 1000) {
-    hz /= 1000;
-    unitIndex++;
-    if(unitIndex === units.length - 1) break;
-  }
-  hz = Math.floor(hz * 1000) * 0.001
-  return `${hz.toLocaleString()} ${units[unitIndex]}`
+  if(hz === Infinity) return Infinity;
+  if(hz === -Infinity) return -Infinity;
+  return `${metricNumber(hz)}Hz`
 }
 export function bitsPerSecond(bps) {
   if(bps === 0) return 'none';
+  if(bps === Infinity) return Infinity;
+  if(bps === -Infinity) return -Infinity;
   let unitIndex = 0;
   const units = ['baud', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps'];
   while(bps > 999) {
@@ -32,21 +44,40 @@ export function bitsPerSecond(bps) {
     if(unitIndex === units.length - 1) break;
   }
   bps = Math.floor(bps * 10) * 0.1
-  return `${bps.toLocaleString()} ${units[unitIndex]}`
+  return `${number(bps)} ${units[unitIndex]}`
 }
-export function durationMilliseconds(milliseconds) {
+export function durationMilliseconds(milliseconds, long = false) {
   if(milliseconds === 0) return 'none';
-  const lookup = [
+  if(milliseconds === Infinity) return Infinity;
+  if(milliseconds === -Infinity) return -Infinity;
+  if(milliseconds !== Math.floor((milliseconds))) {
+    // TODO:
+    // 1000 ps (picoseconds) in a nanosecond
+    // 1000 ns (nanoseconds) in a microsecond
+    // 1000 µs (microseconds) in a millisecond
+  }
+  const lookup = long ? [
+    {mod: 1000, singular: 'milliseconds', plural: 'milliseconds'},
+    {mod: 60, singular: 'second', plural: 'seconds'},
+    {mod: 60, singular: 'minute', plural: 'minutes'},
+    {mod: 24, singular: 'hour', plural: 'hours'},
+    {mod: 7, singular: 'day', plural: 'days'},
+    {mod: 52.1785714, singular: 'week', plural: 'weeks'},
+    {mod: 10, singular: 'year', plural: 'years'},
+    {mod: 10, singular: 'decade', plural: 'decades'},
+    {mod: 10, singular: 'century', plural: 'centuries'},
+    {mod: 10, singular: 'millenium', plural: 'millennia'},
+  ] : [
     {mod: 1000, singular: 'ms', plural: 'ms'},
     {mod: 60, singular: 's', plural: 's'},
     {mod: 60, singular: 'm', plural: 'm'},
     {mod: 24, singular: 'h', plural: 'h'},
     {mod: 7, singular: 'd', plural: 'd'},
-    {mod: 53, singular: 'w', plural: 'w'},
+    {mod: 52.1785714, singular: 'w', plural: 'w'},
     {mod: 10, singular: 'y', plural: 'y'},
-    {mod: 10, singular: 'd', plural: 'd'},
+    {mod: 10, singular: 'dec', plural: 'dec'},
     {mod: 10, singular: 'c', plural: 'c'},
-    {mod: 10, singular: 'm', plural: 'm'},
+    {mod: 10, singular: 'mi', plural: 'mi'},
   ]
   const units = [];
   let remaining = Math.floor(milliseconds);
@@ -67,7 +98,7 @@ export function durationMilliseconds(milliseconds) {
     // drop values of zero
     .filter(({value}) => value > 0)
     // humanize unit
-    .map(({value, singular, plural}) => value + (value === 1 ? singular : plural))
+    .map(({value, singular, plural}) => number(value) + (value === 1 ? singular : plural))
     // combine
     .join(' ');
 }
