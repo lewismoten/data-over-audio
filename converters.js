@@ -24,6 +24,7 @@ export function bytesToText(bytes) {
   return new TextDecoder().decode(bytes);
 }
 export function bytesToBits(bytes) {
+  if(!Array.isArray(bytes)) return [];
   return bytes.reduce((bits, byte) => [
       ...bits, 
       ...byte.toString(2).padStart(8, '0').split('').map(Number)
