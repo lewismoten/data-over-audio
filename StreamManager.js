@@ -65,7 +65,6 @@ export const applyPacket = ({
   bytes,
   size
 }) => {
-  console.log('apply packet %s (sequence %s) crc %s was %s', packetIndex, sequence, numberToHex(8)(crc), numberToHex(8)(actualCrc));
   const dataSize = PacketUtils.getPacketDataByteCount();
   const offset = sequence * dataSize;
   const length = offset + dataSize;

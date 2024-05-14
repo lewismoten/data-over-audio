@@ -6,10 +6,10 @@ let PACKET_SIZE_BITS = 8;
 let DATA_SIZE_BITS = 8;
 let DATA_SIZE_CRC_BITS = 8;
 let DATA_CRC_BITS = 8;
-let BITS_PER_SEGMENT = 1;
-let PACKET_ENCODING = false;
-let PACKET_ENCODING_SIZE = 7;
-let PACKET_DECODING_SIZE = 4;
+let BITS_PER_SAMPLE = 1;
+let IS_ENCODED = false;
+let PACKET_ENCODED_BLOCK_SIZE = 1;
+let PACKET_DECODED_BLOCK_SIZE = 1;
 let ENCODING;
 let PACKET_CRC_BIT_COUNT = 0;
 let PACKET_SEQUENCE_NUMBER_BIT_COUNT = 0;
@@ -33,33 +33,38 @@ export const changeConfiguration = (config) => {
   DATA_SIZE_BITS = dataSizeBitCount;
   DATA_SIZE_CRC_BITS = dataSizeCrcBitCount;
   DATA_CRC_BITS = dataCrcBitCount;
-  BITS_PER_SEGMENT = bitsPerSegment;
-  PACKET_ENCODING = packetEncoding;
-  PACKET_ENCODING_SIZE = packetEncodingBitCount;
-  PACKET_DECODING_SIZE = packetDecodingBitCount;
+  BITS_PER_SAMPLE = bitsPerSegment;
+  IS_ENCODED = packetEncoding;
+  if(IS_ENCODED) {
+    PACKET_ENCODED_BLOCK_SIZE = packetEncodingBitCount;
+    PACKET_DECODED_BLOCK_SIZE = packetDecodingBitCount;
+  } else {
+    PACKET_ENCODED_BLOCK_SIZE = 1;
+    PACKET_DECODED_BLOCK_SIZE = 1;
+  }
   PACKET_CRC_BIT_COUNT = packetCrcBitCount;
   PACKET_SEQUENCE_NUMBER_BIT_COUNT = packetSequenceNumberBitCount;
 }
 export const setEncoding = (encoding) => {
   ENCODING = encoding;
 }
-const encodePacket = (packetBits) => isPacketEncoded() ? ENCODING.encode(packetBits) : packetBits;
-const decodePacket = (packetBits) => isPacketEncoded() ? ENCODING.decode(packetBits) : packetBits;
+const encodePacket = (packetBits) => IS_ENCODED ? ENCODING.encode(packetBits) : packetBits;
+const decodePacket = (packetBits) => IS_ENCODED ? ENCODING.decode(packetBits) : packetBits;
 export const getSegmentDurationMilliseconds = () => SEGMENT_DURATION;
 export const getPacketMaxByteCount = () => 2 ** PACKET_SIZE_BITS;
+export const getPacketMaxBitCount = () => (2 ** PACKET_SIZE_BITS) * 8;
 export const getDataMaxByteCount = () => 2 ** DATA_SIZE_BITS;
-export const getBitsPerSegment = () => BITS_PER_SEGMENT;
-export const isPacketEncoded = () => PACKET_ENCODING;
-export const packetEncodingBlockSize = () => isPacketEncoded() ? PACKET_ENCODING_SIZE : 0;
-export const packetDecodingBlockSize = () => isPacketEncoded() ? PACKET_DECODING_SIZE : 0;
-export const getPacketEncodedBitCount = () => {
-  if(isPacketEncoded()) return getPacketEncodingBlockCount() * PACKET_DECODING_SIZE;
-  return getPacketMaxBitCount();
-}
+export const getPacketEncodedBitCount = () => getPacketEncodingBlockCount() * PACKET_ENCODED_BLOCK_SIZE;
+export const getPacketEncodingBlockCount = () =>
+  IS_ENCODED ? Math.floor(getPacketMaxBitCount() / PACKET_ENCODED_BLOCK_SIZE) : getPacketMaxBitCount();
+
 export const getPacketDataByteCount = () => {
-  const availableBitCount = getPacketEncodedBitCount() - getPacketHeaderBitCount();
+  const availableBitCount = getPacketEncodedBitCount();
+  const blocks = Math.floor(availableBitCount / PACKET_ENCODED_BLOCK_SIZE);
+  let decodedBits = blocks * PACKET_DECODED_BLOCK_SIZE;
+  decodedBits -= getPacketHeaderBitCount()
   // We only transfer full bytes within packets
-  return Math.floor(availableBitCount / 8);
+  return Math.floor(decodedBits / 8);
 }
 export const getPacketDataBitCount = () => getPacketDataByteCount() * 8;
 export function fromByteCountGetPacketLastUnusedBitCount(byteCount) {
@@ -69,40 +74,37 @@ export function fromByteCountGetPacketLastUnusedBitCount(byteCount) {
 
   let bitsInLastPacket = bitCount % dataBitsPerPacket;
   let usedBits = bitsInLastPacket + getPacketHeaderBitCount() ;
-  if(isPacketEncoded()) {
-    const blocks = Math.ceil(usedBits / packetDecodingBlockSize())
-    usedBits = blocks * packetEncodingBlockSize();
+  if(IS_ENCODED) {
+    const blocks = Math.ceil(usedBits / PACKET_DECODED_BLOCK_SIZE)
+    usedBits = blocks * PACKET_ENCODED_BLOCK_SIZE;
   }
   return availableBits - usedBits;
 }
 export function getPacketLastSegmentUnusedBitCount() {
-  return (BITS_PER_SEGMENT - (getPacketMaxBitCount() % BITS_PER_SEGMENT));
+  return (BITS_PER_SAMPLE - (getPacketMaxBitCount() % BITS_PER_SAMPLE));
 }
 export const getBaud = () => {
-  return Math.floor(getBitsPerSegment() / getSegmentDurationSeconds());
+  return Math.floor(BITS_PER_SAMPLE / getSegmentDurationSeconds());
 }
 export const getEffectiveBaud = () => {
   return Math.floor(getPacketDataBitCount() / getPacketDurationSeconds());
 }
 export const getEncodedPacketDataBitCount = () => {
-  return isPacketEncoded() ? getPacketEncodingBitCount() : 0;
+  return IS_ENCODED ? getPacketEncodedBitCount() : 0;
 }
 export const getPacketUsedBitCount = () => 
-  isPacketEncoded() ? getPacketEncodingBitCount() : getPacketMaxBitCount();
+  IS_ENCODED ? getPacketEncodedBitCount() : getPacketMaxBitCount();
 export const getPacketUnusedBitCount = () => getPacketMaxBitCount() - getPacketUsedBitCount();
 export const getMaxPackets = () =>
   Math.ceil((getDataMaxByteCount() * 8) / getPacketUsedBitCount());
 export const getMaxDurationMilliseconds = () => getMaxPackets() * getPacketDurationMilliseconds();
-export const getPacketEncodingBitCount = () => getPacketEncodingBlockCount() * packetEncodingBlockSize();
 export const canSendPacket = () => {
   let maxBits = getPacketMaxBitCount();
   // Need to be able to send at least 1 data bit with each packet
   if(maxBits - getPacketHeaderBitCount() < 1) return false;
   // Make sure we have enough encoding blocks within a packet
-  return isPacketEncoded() ? maxBits >= packetEncodingBlockSize() : true;
+  return IS_ENCODED ? maxBits >= PACKET_ENCODED_BLOCK_SIZE : true;
 }
-export const getPacketEncodingBlockCount = () =>
-  isPacketEncoded() ? Math.floor(getPacketMaxBitCount() / packetEncodingBlockSize()) : 0;
 export const getPacketizationHeaderBitCount = () => DATA_SIZE_BITS + DATA_SIZE_CRC_BITS + DATA_CRC_BITS;
 export const getPacketizationBitCountFromBitCount = (bitCount) => bitCount + getPacketizationHeaderBitCount();
 export const getPacketizationBitCountFromByteCount = (byteCount) =>
@@ -133,8 +135,7 @@ export const getDataTransferDurationMilliseconds = (bitCount) =>
   getPacketCount(bitCount) * getPacketDurationMilliseconds();
 export const getPacketDurationSeconds = () => getPacketDurationMilliseconds() / 1000;
 export const getSegmentDurationSeconds = () => getSegmentDurationMilliseconds() / 1000;
-export const getPacketMaxBitCount = () => getPacketMaxByteCount() * 8;
-export const getPacketSegmentCount = () => Math.ceil(getPacketMaxBitCount() / getBitsPerSegment());
+export const getPacketSegmentCount = () => Math.ceil(getPacketMaxBitCount() / BITS_PER_SAMPLE);
 export const getPacketDurationMilliseconds = () => 
   getPacketSegmentCount() * getSegmentDurationMilliseconds();
 export const getPacketIndex = (transferStartedMilliseconds, time) =>
@@ -188,9 +189,9 @@ export const pack = (bits) => ({
     const startIndex = packetIndex * dataBitCount;
     const endIndex = startIndex + dataBitCount;
     let packetBits = bits.slice(startIndex, endIndex);
-
-    // add our headers
-    const unusedBits = new Array(getPacketHeaderUnusedBitCount()).fill(0);
+    if(packetBits.length % 8 !== 0) {
+      throw new Error('Attempted to create a packet with extra bits.');
+    }
 
     // data byte count
     let byteCount = Math.ceil(packetBits.length / 8);
@@ -199,34 +200,37 @@ export const pack = (bits) => ({
     // sequence number
     if(PACKET_SEQUENCE_NUMBER_BIT_COUNT !== 0) {
       sequenceNumberBits = numberToBits(packetIndex, PACKET_SEQUENCE_NUMBER_BIT_COUNT);
-      if(packetIndex < 3)
-        console.log('write sequence %s', packetIndex, packetIndex.toString(2));
     }
 
+    // add our headers
     const headerBits = [
       ...sequenceNumberBits,
       ...dataLengthBits,
-      ...unusedBits
+      ...new Array(getPacketHeaderUnusedBitCount()).fill(0)
     ]
 
     if(PACKET_CRC_BIT_COUNT !== 0) {
       // convert to bytes
-      const bytes = bitsToBytes([...headerBits, ...packetBits]);
+      const crcCheckBits = [...headerBits, ...packetBits];
+      console.log('crc check bits', crcCheckBits.length) // 136 bits
+      const bytes = bitsToBytes(crcCheckBits);
       const crc = CRC.check(bytes, PACKET_CRC_BIT_COUNT);
       const crcBits = numberToBits(crc, PACKET_CRC_BIT_COUNT);
-      if(packetIndex < 3)
-      console.log('write packet %s crc 0b%s', packetIndex, crc.toString(2));
-
+      if(packetIndex === 0) {
+        console.log('header without crc was', headerBits.length)
+        console.log('we did crc on this', crcCheckBits.join(''))
+      }
+    
       // CRC must be first
       headerBits.unshift(...crcBits);
     }
     packetBits.unshift(...headerBits);
 
-    if(packetIndex < 3) {
-      console.log('WRITE packet %s bits', packetIndex, packetBits.slice(0, 20).join(''));
-    }
     // encode our packet
     const encodedBits = encodePacket(packetBits);
+    if(encodedBits.length > 2 ** PACKET_SIZE_BITS * 8) {
+      throw new Error(`Attempted to create packet exceeding ${2 ** PACKET_SIZE_BITS * 8} bits with ${encodedBits.length} bits.`);
+    }
     return encodedBits;
   }
 });
@@ -247,63 +251,50 @@ export const unpack = (bits) => ({
     packetBits = packetBits.slice(0, getPacketMaxBitCount());
 
     // Remove extra bits not used by encoding
-    if(isPacketEncoded()) {
-      packetBits.splice(0, getPacketEncodedBitCount());
+    if(IS_ENCODED) {
+      packetBits.splice(getPacketEncodedBitCount());// before or after... i thik we need encoded. 144 is too small for 256 available
       packetBits = decodePacket(packetBits);
     }
-    if(packetIndex < 3) {
-      console.log('READ packet %s bits', packetIndex, packetBits.slice(0, 20).join(''));
-    }
-    const extraHeaderBitCount = getPacketHeaderUnusedBitCount();
+
     const headerBitCount = getPacketHeaderBitCount();
 
-    // Detect data size
-    const sizeBits = packetBits.slice(PACKET_CRC_BIT_COUNT + PACKET_SEQUENCE_NUMBER_BIT_COUNT, PACKET_SIZE_BITS);
-    const dataSizeByteCount = numberToBytes(sizeBits, PACKET_SIZE_BITS);
-    unpacked.size = dataSizeByteCount
+    // Get data size
+    const sizeBits = packetBits.slice(
+      PACKET_CRC_BIT_COUNT + PACKET_SEQUENCE_NUMBER_BIT_COUNT, 
+      PACKET_CRC_BIT_COUNT + PACKET_SEQUENCE_NUMBER_BIT_COUNT + PACKET_SIZE_BITS
+    );
+    const dataSizeByteCount = bitsToInt(sizeBits, PACKET_SIZE_BITS);
+    unpacked.size = dataSizeByteCount;
 
-    // Process CRC header FIRST (ensures all other headers are valid)
+    // Get sequence number
+    if(PACKET_SEQUENCE_NUMBER_BIT_COUNT === 0) {
+      unpacked.sequence = packetIndex;
+    } else {
+      const sequenceBits = packetBits.slice(
+        PACKET_CRC_BIT_COUNT,
+        PACKET_CRC_BIT_COUNT + PACKET_SEQUENCE_NUMBER_BIT_COUNT
+      );
+      const sequence = bitsToInt(sequenceBits, PACKET_SEQUENCE_NUMBER_BIT_COUNT);
+      unpacked.sequence = sequence;
+    }
+
+    // Get CRC Header
     if(PACKET_CRC_BIT_COUNT !== 0) {
       const crcBits = packetBits.slice(0, PACKET_CRC_BIT_COUNT);
       const expectedCrc = bitsToInt(crcBits, PACKET_CRC_BIT_COUNT);
-      if(packetIndex < 3) {
-        console.log('read packet %s crc', packetIndex, numberToHex(PACKET_CRC_BIT_COUNT)(expectedCrc))
-      }
       unpacked.crc = expectedCrc;
 
       // Run CRC on all bits except CRC header
-      const crcLength = (headerBitCount - PACKET_CRC_BIT_COUNT) + (dataSizeByteCount * 8);
-      const crcCopy = packetBits.slice(PACKET_CRC_BIT_COUNT, crcLength);
+      const bitCountToCheck = (headerBitCount - PACKET_CRC_BIT_COUNT) + (dataSizeByteCount * 8);
+      const crcCopy = packetBits.slice(PACKET_CRC_BIT_COUNT, PACKET_CRC_BIT_COUNT + bitCountToCheck);
 
       // check the crc is valid
       const bytes = bitsToBytes(crcCopy);
       unpacked.actualCrc = CRC.check(bytes, PACKET_CRC_BIT_COUNT);
-
-      // remove CRC header
-      packetBits.splice(0, PACKET_CRC_BIT_COUNT);
     }
 
-    // Process sequence header
-    if(PACKET_SEQUENCE_NUMBER_BIT_COUNT === 0) {
-      unpacked.sequence = packetIndex;
-    } else {
-      const sequenceBits = packetBits.slice(0, PACKET_SEQUENCE_NUMBER_BIT_COUNT);
-      const sequence = bitsToInt(sequenceBits, PACKET_SEQUENCE_NUMBER_BIT_COUNT);
-      if(packetIndex < 3)
-      console.log('read packetIndex %s as sequence %s', packetIndex, sequence, sequenceBits.join(''))
-      unpacked.sequence = sequence;
-      // remove sequence number header
-      packetBits.splice(0, PACKET_SEQUENCE_NUMBER_BIT_COUNT);
-    }
-  
-    // Remove packet size header
-    packetBits.splice(0, PACKET_SIZE_BITS);
-
-    // remove unused header bits
-    if(extraHeaderBitCount !== 0) packetBits.splice(0, extraHeaderBitCount);
-
-    // Reduce remaining data to proper size
-    packetBits.splice(0, unpacked.size * 8);
+    // Get data bits
+    packetBits = packetBits.slice(headerBitCount, headerBitCount + unpacked.size * 8);
 
     // convert to bytes
     unpacked.bytes = bitsToBytes(packetBits);
@@ -322,13 +313,12 @@ export const unpack = (bits) => ({
     if(!canSendPacket()) return unpacked;
 
     // Get bits associated with the packet
-    const packetBitCount = getPacketSegmentCount() + BITS_PER_SEGMENT;
+    const packetBitCount = getPacketSegmentCount() + BITS_PER_SAMPLE;
     const offset = packetIndex * packetBitCount;
     const packetBits = bits.slice(offset, offset + packetBitCount);
 
     if(packetBits.length === 0) return unpacked;
 
     return this.getPacketFromBits(packetBits, packetIndex);
-
   }
 });
