@@ -33,7 +33,7 @@ class MicrophonePanel extends BasePanel {
           })
           .catch(error => {
             this.error = error;
-            console.log(error);
+            console.error(error);
             this.setListening(false);
             this.disconnectStream();
             this.stopSampling();

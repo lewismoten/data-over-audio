@@ -6,7 +6,8 @@ import {
   bitsToInt,
   bytesToBits,
   numberToBytes,
-  numberToHex
+  numberToHex,
+  numberToAscii
 } from "./converters";
 
 const dispatcher = new Dispatcher('StreamManager', ['change']);
@@ -74,13 +75,14 @@ export const applyPacket = ({
     }
     if(DATA.length < length) {
       const copy = new Uint8ClampedArray(length);
-      copy.set(DATA.subarray(0, DATA.length));
+      copy.set(DATA.subarray(0, DATA.length), 0);
       DATA = copy;
     }
     DATA.set(bytes, offset);
     delete BITS[packetIndex];
     dispatcher.emit('packetReceived');
   } else {
+    console.log("Failed", sequence);
     if(!FAILED_SEQUENCES.includes(sequence))
       FAILED_SEQUENCES.push(sequence);
   }

@@ -6,11 +6,12 @@ export const numberToBytes = (number, bitLength) => {
   }
   return bytes;
 }
-export const numberToHex = (bitLength) => {
+export const numberToHex = (bitLength, prefix = '0x') => {
   const digits = Math.ceil(bitLength / 4);
-  return (number) => '0x' + number.toString(16).padStart(digits, '0').toUpperCase();
+  return (number) => prefix + Number(number).toString(16).padStart(digits, '0').toUpperCase();
 }
-
+export const numberToAscii = (number) => String.fromCharCode(clamp(Number(number), 0, 255));
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export function numberToBits(number, bitLength) {
   const bits = [];
   for(let i = bitLength - 1; i >= 0; i--)

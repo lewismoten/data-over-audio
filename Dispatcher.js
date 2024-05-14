@@ -5,7 +5,6 @@ class Dispatcher {
     this.domain = domain;
   }
   emit = (eventName, ...args) => {
-    // console.log(`${this.domain}.${eventName}`, ...args);
     if(!this.LISTENERS[eventName]) return;
     this.LISTENERS[eventName].forEach(callback => callback(...args));
   }

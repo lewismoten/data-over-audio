@@ -340,28 +340,32 @@ function updatePacketUtils() {
   speedPanel.setMaximumDurationMilliseconds(PacketUtils.getMaxDurationMilliseconds());
   speedPanel.setDataBitsPerSecond(PacketUtils.getEffectiveBaud());
   speedPanel.setPacketizationBitsPerSecond(PacketUtils.getBaud());
-  speedPanel.setTransferDurationMilliseconds(PacketUtils.getDataTransferDurationMillisecondsFromByteCount(
-    messagePanel.getMessageBytes().length
-  ));
+  const {
+    totalDurationSeconds
+  } = PacketUtils.packetStats(messagePanel.getMessageBytes().length);
+  speedPanel.setTransferDurationMilliseconds(totalDurationSeconds * 1000);
 
 }
 function updatePacketStats() {
   const bytes = messagePanel.getMessageBytes();
-  const bits = bytesToBits(bytes);
   const byteCount = bytes.length;
-  const bitCount = PacketUtils.getPacketizationBitCountFromBitCount(bits.length);;
+
+  const {
+    transferBitCount,
+    transferByteCount,
+    packetCount,
+    samplePeriodCount
+  } = PacketUtils.packetStats(byteCount);
 
   // Data
   document.getElementById('original-byte-count').innerText = byteCount.toLocaleString();
-  document.getElementById('packetization-byte-count').innerText = PacketUtils.getPacketizationByteCountFromBitCount(bits.length).toLocaleString();
-  document.getElementById('packetization-bit-count').innerText = bitCount.toLocaleString();
-  document.getElementById('packet-count').innerText = PacketUtils.getPacketCount(bitCount).toLocaleString();
-  // ## Packet Encoding
-
-  // Data
+  document.getElementById('packetization-byte-count').innerText = transferByteCount.toLocaleString();
+  document.getElementById('packetization-bit-count').innerText = transferBitCount.toLocaleString();
+  document.getElementById('packet-count').innerText = packetCount.toLocaleString();
   document.getElementById('last-packet-unused-bit-count').innerText = PacketUtils.fromByteCountGetPacketLastUnusedBitCount(byteCount).toLocaleString();
+  document.getElementById('total-segments').innerText = samplePeriodCount.toLocaleString();
+
   frequencyGraphPanel.setSamplePeriodsPerGroup(PacketUtils.getPacketSegmentCount());
-  document.getElementById('total-segments').innerText = getTotalSegmentCount(bitCount).toLocaleString();
 }
 
 
@@ -427,46 +431,6 @@ function sendBytes(bytes) {
   SENT_ORIGINAL_TEXT = bytesToText(bytes);
   SENT_ORIGINAL_BITS = bits.slice();  
 
-  // packetization headers
-  // data length
-  let dataLengthBits = [];
-  let dataLengthCrcBits = [];
-  let dataSizeCrcNumber = 0;
-  const dataLengthBitLength = packetizationPanel.getDataSizePower();
-  if(dataLengthBitLength !== 0) {
-    dataLengthBits = numberToBits(bytes.length, dataLengthBitLength);
-
-    // crc on data length
-    const dataSizeCrcBitLength = packetizationPanel.getDataSizeCrc();
-    if(dataSizeCrcBitLength !== 0) {
-      const bytes = bitsToBytes(dataLengthBits);
-      dataSizeCrcNumber = CRC.check(bytes, dataSizeCrcBitLength);
-      dataLengthCrcBits = numberToBits(dataSizeCrcNumber, dataSizeCrcBitLength);
-    }
-  } 
-
-  // crc on data
-  let dataCrcBits = [];
-  const dataCrcBitLength = packetizationPanel.getDataCrc();
-  let dataCrcNumber = 0;
-  if(dataCrcBitLength !== 0) {
-    dataCrcNumber = CRC.check(bytes, dataCrcBitLength);
-    dataCrcBits = numberToBits(dataCrcNumber, dataCrcBitLength);
-  } 
-  const headers = [
-    ...dataLengthBits,
-    ...dataLengthCrcBits,
-    ...dataCrcBits
-  ];
-  // pad headers to take full bytes
-  while(headers.length % 8 !== 0) {
-    headers.push(0);
-  }
-  // prefix bits with headers
-  bits.unshift(...headers);
-
-  const bitCount = bits.length;
-
   SENT_TRANSFER_BITS.length = 0;
   SENT_ENCODED_BITS.length = 0;
 
@@ -474,11 +438,12 @@ function sendBytes(bytes) {
 
   const startSeconds = AudioSender.now() + 0.1;
   const packetBitCount = PacketUtils.getPacketMaxBitCount();
-  const packetDurationSeconds = PacketUtils.getPacketDurationSeconds();
-  const packetCount = PacketUtils.getPacketCount(bitCount);
-  const totalDurationSeconds = PacketUtils.getDataTransferDurationSeconds(bitCount);
-
-  const packer = PacketUtils.pack(bits);
+  const {
+    packetCount,
+    totalDurationSeconds,
+    packetDurationSeconds
+  } = PacketUtils.packetStats(byteCount);
+  const packer = PacketUtils.pack(bytes);
 
   try {
     AudioSender.beginAt(startSeconds);
@@ -555,7 +520,7 @@ function getPacketEndMilliseconds(packetStartedMilliseconds) {
   return getNextPacketStartMilliseconds(packetStartedMilliseconds) - 0.1;
 }
 function getTotalSegmentCount(bitCount) {
-  return PacketUtils.getPacketCount(bitCount) * PacketUtils.getPacketSegmentCount();
+  return PacketUtils.packetsNeededToTransferBytes(bitCount/8) * PacketUtils.getPacketSegmentCount();
 }
 function padArray(values, length, value) {
   values = values.slice();//copy
@@ -597,12 +562,6 @@ function handleStreamManagerChange() {
   } else {
     receivePanel.setReceivedBytes(bytes);
   }
-}
-function parseTotalBitsTransferring() {
-  const dataByteCount = StreamManager.getTransferByteCount();
-  const bitCount = PacketUtils.getPacketizationBitCountFromByteCount(dataByteCount);
-  const segments = getTotalSegmentCount(bitCount);
-  return segments * availableFskPairsPanel.getSelectedFskPairs().length;
 }
 
 function removeEncodedPadding(bits) {
