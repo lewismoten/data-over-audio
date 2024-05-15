@@ -15,27 +15,19 @@ import SignalPanel from "./Panels/SignalPanel";
 import PacketizationPanel from "./Panels/PacketizationPanel";
 import AvailableFskPairsPanel from "./Panels/AvailableFskPairsPanel";
 import FrequencyGraphPanel from "./Panels/FrequencyGraphPanel";
-import GraphConfigurationPanel from './Panels/GraphConfigurationPanel'
+import GraphConfigurationPanel from './Panels/GraphConfigurationPanel';
+import PacketErrorPanel from './Panels/PacketErrorPanel';
 import SpeedPanel from './Panels/SpeedPanel';
 import {
   bitsToInt,
-  bitsToBytes,
-  bitsToText,
   bytesToBits,
   bytesToText,
   numberToBytes,
-  numberToBits,
-  numberToHex,
-  textToBits,
-  textToBytes,
 } from './converters';
 import MicrophonePanel from "./Panels/MicrophonePanel";
 import ReceivePanel from "./Panels/ReceivePanel";
 var audioContext;
-var microphoneStream;
-var microphoneNode;
 var analyser;
-var sentDataTextArea;
 
 // bits as they are sent
 let SENT_ORIGINAL_TEXT = '';
@@ -72,6 +64,7 @@ const graphConfigurationPanel = new GraphConfigurationPanel();
 const speedPanel = new SpeedPanel();
 const microphonePanel = new MicrophonePanel();
 const receivePanel = new ReceivePanel();
+const packetErrorPanel = new PacketErrorPanel();
 
 function handleWindowLoad() {
   const panelContainer = document.getElementById('panel-container');
@@ -84,6 +77,7 @@ function handleWindowLoad() {
   panelContainer.prepend(signalPanel.getDomElement());
   panelContainer.prepend(bitsReceivedPanel.getDomElement());
   panelContainer.prepend(bitsSentPanel.getDomElement());
+  panelContainer.prepend(packetErrorPanel.getDomElement());
   panelContainer.prepend(receivePanel.getDomElement());
   panelContainer.prepend(microphonePanel.getDomElement());
   panelContainer.prepend(communicationsPanel.getDomElement());
@@ -103,8 +97,13 @@ function handleWindowLoad() {
     receivePanel.setDataType(dataType);
   })
   receivePanel.setDataType(messagePanel.getDataType());
-  receivePanel.setProgress(0);
+  receivePanel.setExpectedPacketCount(100);
+  receivePanel.setFailedPacketCount(25);
+  receivePanel.setSuccessfulPacketCount(50);
+
   receivePanel.setReceivedHtml('Ready.');
+
+  packetErrorPanel.reset();
 
   bitsSentPanel.setCode('');
   bitsReceivedPanel.setCode('');
@@ -222,9 +221,25 @@ function handleWindowLoad() {
   AudioSender.addEventListener('end', () => messagePanel.setSendButtonText('Send'));
   // Setup stream manager
   StreamManager.addEventListener('change', handleStreamManagerChange);
+  StreamManager.addEventListener('packetFailed', () => {
+    packetErrorPanel.setFailedPacketIndeces(StreamManager.getFailedPacketIndeces());
+  });
+  StreamManager.addEventListener('packetReceived', () => {
+    // Failed indices changed?
+    packetErrorPanel.setFailedPacketIndeces(StreamManager.getFailedPacketIndeces());
+    if(StreamManager.getSizeCrcAvailable()) {
+      packetErrorPanel.setSizeCrcPassed(StreamManager.getSizeCrcPassed());
+    } else {
+      packetErrorPanel.setSizeCrcUnavailable();
+    }
+    if(StreamManager.getCrcAvailable()) {
+      packetErrorPanel.setCrcPassed(StreamManager.getCrcPassed());
+    } else {
+      packetErrorPanel.setCrcUnavailable();
+    }
+  });
 
   // grab dom elements
-  sentDataTextArea = document.getElementById('sent-data');
   const receivedChannelGraph = document.getElementById('received-channel-graph');
   receivedChannelGraph.addEventListener('mouseover', handleReceivedChannelGraphMouseover);
   receivedChannelGraph.addEventListener('mouseout', handleReceivedChannelGraphMouseout);
@@ -303,6 +318,9 @@ function updateStreamManager() {
     bitsPerPacket: PacketUtils.getPacketMaxBitCount(),
     segmentsPerPacket: PacketUtils.getPacketSegmentCount(),
     bitsPerSegment: availableFskPairsPanel.getSelectedFskPairs().length,
+    dataCrcBitLength: packetizationPanel.getDataCrc(),
+    dataSizeBitCount: packetizationPanel.getDataSizePower(),
+    dataSizeCrcBitCount: packetizationPanel.getDataSizeCrc(),
     streamHeaders: {
       'transfer byte count': {
         index: 0,
@@ -549,8 +567,9 @@ function resumeGraph() {
 }
 
 function handleStreamManagerChange() {
-
-  receivePanel.setProgress(StreamManager.getPercentReceived());
+  receivePanel.setSuccessfulPacketCount(StreamManager.countSuccessfulPackets());
+  receivePanel.setExpectedPacketCount(StreamManager.countExpectedPackets());
+  receivePanel.setFailedPacketCount(StreamManager.countFailedPackets());
 
   const bytes = StreamManager.getDataBytes();
   const receivedText = bytesToText(bytes);

@@ -66,10 +66,12 @@ canvas {
   min-height: 14px;
   background-color: yellow;
   position: relative;
-  z-index: 2;
-  left: 0;
   width: 0;
-  /* transition: width 0.3s ease; */
+  display: inline-block;
+  transition: width 1s ease;
+}
+.progress-bar:nth-child(2) {
+  background-color: red;
 }
 .xprogress-container::after {
   content: attr(data-percent) '%';

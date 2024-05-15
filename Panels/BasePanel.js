@@ -162,20 +162,32 @@ class BasePanel {
     canvas.height = height;
     return this.append(canvas);
   }
-  addProgressBar = (id, percent) => {
+  addProgressBar = (id, ...percents) => {
     const progressBar = document.createElement('div');
     progressBar.className = 'progress-container';
-    const bar = document.createElement('div');
-    bar.id = this.childId(id);
-    bar.className = 'progress-bar';
-    bar.style.width = `${clamp(percent, 0, 1) * 100}%`;
-    progressBar.append(bar);
+    let sum = 0;
+    for(let i = 0; i < percents.length; i++) {
+      let percent = percents[i];
+      percent = clamp(percent, 0, 1 - sum);
+      sum += percent;
+      const bar = document.createElement('div');
+      bar.id = this.childId(`${id}-${i}`);
+      bar.className = 'progress-bar';
+      bar.style.width = `${clamp(percent, 0, 1) * 100}%`;
+      progressBar.append(bar);
+    }
     this.append(progressBar);
   }
-  setProgressById = (id, percent) => {
-    const element = document.getElementById(this.childId(id));
-    if(!element) throw new Error(`Unable to find ${id}`);
-    element.style.width = `${clamp(percent, 0, 1) * 100}%`;
+  setProgressById = (id, ...percents) => {
+    let sum = 0;
+    for(let i = 0; i < percents.length; i++) {
+      let percent = percents[i];
+      percent = clamp(percent, 0, 1 - sum);
+      sum += percent;
+      const element = document.getElementById(this.childId(`${id}-${i}`));
+      if(!element) throw new Error(`Unable to find ${id}`);
+      element.style.width = `${clamp(percent, 0, 1) * 100}%`;
+    }
   }
   childId = id => `${this.id}-${id}`;
 

@@ -10,7 +10,7 @@ import * as CRC from './CRC';
 
 let SEGMENT_DURATION = 30;
 let PACKET_SIZE_BITS = 8;
-let DATA_SIZE_BITS = 8;
+let DATA_SIZE_BIT_COUNT = 8;
 let DATA_SIZE_CRC_BITS = 8;
 let DATA_CRC_BITS = 8;
 let BITS_PER_SAMPLE = 1;
@@ -37,7 +37,7 @@ export const changeConfiguration = (config) => {
   } = config;
   SEGMENT_DURATION = segmentDurationMilliseconds;
   PACKET_SIZE_BITS = packetSizeBitCount;
-  DATA_SIZE_BITS = dataSizeBitCount;
+  DATA_SIZE_BIT_COUNT = dataSizeBitCount;
   DATA_SIZE_CRC_BITS = dataSizeCrcBitCount;
   DATA_CRC_BITS = dataCrcBitCount;
   BITS_PER_SAMPLE = bitsPerSegment;
@@ -60,7 +60,7 @@ const decodePacket = (packetBits) => IS_ENCODED ? ENCODING.decode(packetBits) : 
 export const getSegmentDurationMilliseconds = () => SEGMENT_DURATION;
 export const getPacketMaxByteCount = () => 2 ** PACKET_SIZE_BITS;
 export const getPacketMaxBitCount = () => (2 ** PACKET_SIZE_BITS) * 8;
-export const getDataMaxByteCount = () => 2 ** DATA_SIZE_BITS;
+export const getDataMaxByteCount = () => 2 ** DATA_SIZE_BIT_COUNT;
 export const getPacketEncodedBitCount = () => getPacketEncodingBlockCount() * PACKET_ENCODED_BLOCK_SIZE;
 export const getPacketEncodingBlockCount = () =>
   IS_ENCODED ? Math.floor(getPacketMaxBitCount() / PACKET_ENCODED_BLOCK_SIZE) : getPacketMaxBitCount();
@@ -113,7 +113,7 @@ export const canSendPacket = () => {
   return IS_ENCODED ? maxBits >= PACKET_ENCODED_BLOCK_SIZE : true;
 }
 export const getPacketizationHeaderBitCount = (padUnusedBits = true) => {
-  let count = DATA_SIZE_BITS + DATA_SIZE_CRC_BITS + DATA_CRC_BITS;
+  let count = DATA_SIZE_BIT_COUNT + DATA_SIZE_CRC_BITS + DATA_CRC_BITS;
   if(padUnusedBits && count % 8 !== 0) {
     count += 8 - (count % 8);
   }
@@ -196,8 +196,8 @@ export const pack = (bytes) => {
     let dataLengthBits = [];
     let dataLengthCrcBits = [];
     let dataSizeCrcNumber = 0;
-    if(DATA_SIZE_BITS !== 0) {
-      dataLengthBits = numberToBits(bytes.length, DATA_SIZE_BITS);
+    if(DATA_SIZE_BIT_COUNT !== 0) {
+      dataLengthBits = numberToBits(bytes.length, DATA_SIZE_BIT_COUNT);
   
       // crc on data length
       if(DATA_SIZE_CRC_BITS !== 0) {
@@ -217,7 +217,7 @@ export const pack = (bytes) => {
     const headers = [
       ...dataLengthBits,
       ...dataLengthCrcBits,
-      ...dataCrcBits
+      ...dataCrcBits,
     ];
     // pad headers to take full bytes
     while(headers.length % 8 !== 0) {

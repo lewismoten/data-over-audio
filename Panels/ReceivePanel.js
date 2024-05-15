@@ -15,7 +15,7 @@ class ReceivePanel extends BasePanel {
     this.addNewLine();
     this.addDynamicText('id-state', 'Offline.');
 
-    this.addProgressBar('progress', .50);
+    this.addProgressBar('progress', .50, .25);
 
     this.addCode('text', '', 'small');
     this.addImage('image', undefined, {width: 32, height: 32});
@@ -69,7 +69,9 @@ class ReceivePanel extends BasePanel {
   // stopWaitingForSignal = () => {
   //   AudioReceiver.stop();
   // }
-  setProgress = percent => this.setProgressById('progress', percent);
+  setProgress = (percent, percent2 = 0) => {
+    this.setProgressById('progress', percent, percent2);
+  }
   setReceivedHtml = (html) => this.setHtmlById('text', html);
   setReceivedBytes = bytes => {
     if(this.dataType === 'text') {
@@ -84,6 +86,30 @@ class ReceivePanel extends BasePanel {
     this.display('text', value === 'text');
     this.display('image', value === 'image');
   }
+
+  setSuccessfulPacketCount = (count) => {
+    this.successfulPacketCount = count;
+    this.updateProgressBar();
+  }
+  setExpectedPacketCount = (count) => {
+    this.expectedPacketCount = count;
+    this.updateProgressBar();
+  }
+  setFailedPacketCount = (count) => {
+    this.failedPacketCount = count;
+    this.updateProgressBar();
+  }
+  updateProgressBar = () => {
+    const total = this.expectedPacketCount;
+    if(total === 0) {
+      this.setProgress(0, 0);
+    }
+    this.setProgress(
+      this.successfulPacketCount/total,
+      this.failedPacketCount/total
+    )
+  }
+
 }
 
 export default ReceivePanel;

@@ -18,6 +18,13 @@ export function numberToBits(number, bitLength) {
     bits.push((number >> i) & 1);
   return bits;
 }
+export function bytesToNumber(bytes) {
+  let number = 0;
+  for(let i = 0; i < bytes.length; i++) {
+    number += bytes[i] << (8 * i);
+  }
+  return number;
+}
 export function bytesToText(bytes) {
   if(!(bytes instanceof ArrayBuffer || ArrayBuffer.isView(bytes))) {
     bytes = new Uint8Array(bytes).buffer;
@@ -25,6 +32,9 @@ export function bytesToText(bytes) {
   return new TextDecoder().decode(bytes);
 }
 export function bytesToBits(bytes) {
+  if(ArrayBuffer.isView(bytes)) {
+    bytes = Array.from(bytes);
+  } 
   if(!Array.isArray(bytes)) return [];
   return bytes.reduce((bits, byte) => [
       ...bits, 
