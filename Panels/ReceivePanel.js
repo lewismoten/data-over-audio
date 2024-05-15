@@ -15,7 +15,7 @@ class ReceivePanel extends BasePanel {
     this.addNewLine();
     this.addDynamicText('id-state', 'Offline.');
 
-    this.addProgressBar('progress', .50, .25);
+    this.addProgressBar('progress', 0, 0);
 
     this.addCode('text', '', 'small');
     this.addImage('image', undefined, {width: 32, height: 32});
@@ -45,6 +45,10 @@ class ReceivePanel extends BasePanel {
     this.addEventListener('resetClick', () => {
       AudioReceiver.reset();
       StreamManager.reset();
+      this.setReceivedBytes([]);
+      this.setExpectedPacketCount(0);
+      this.setFailedPacketCount(0);
+      this.setSuccessfulPacketCount(0);
     });
   }
   isOnline = () => this.getCheckedById('is-online');
@@ -58,17 +62,6 @@ class ReceivePanel extends BasePanel {
       this.setValueById('id-state', 'offline');
     }
   }
-
-  // waitForSignal = () => {
-  //   AudioReceiver.start();
-  // }
-  // reset = () => {
-  //   AudioReceiver.reset();
-  //   StreamManager.reset();  
-  // }
-  // stopWaitingForSignal = () => {
-  //   AudioReceiver.stop();
-  // }
   setProgress = (percent, percent2 = 0) => {
     this.setProgressById('progress', percent, percent2);
   }

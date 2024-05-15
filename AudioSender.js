@@ -37,6 +37,16 @@ export const changeConfiguration = ({
 
 export const setAudioContext = ctx => audioContext = ctx;
 
+export const setDestination = destination => {
+  DESTINATION = destination;
+  const oscillators = getOscillators();
+  oscillators.forEach(
+    oscillator => {
+      oscillator?.disconnect();
+      oscillator?.connect(destination);
+    }
+  )
+}
 function getAudioContext() {
   if(!audioContext) {
     throw 'Audio context not provided.';
@@ -128,10 +138,7 @@ export function stopAt(streamEndSeconds) {
     oscillator?.stop(streamEndSeconds);
   }
   stopTimeout();
-  stopOscillatorsTimeoutId = window.setTimeout(
-    stop,
-    delayMs(streamEndSeconds)
-  );
+  stopOscillatorsTimeoutId = window.setTimeout(stop, delayMs(streamEndSeconds));
 }
 export function stop() {
   const oscillators = getOscillators();

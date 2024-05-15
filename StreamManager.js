@@ -2,13 +2,9 @@ import Dispatcher from "./Dispatcher";
 import * as CRC from './CRC';
 import * as PacketUtils from './PacketUtils';
 import { 
-  bitsToBytes,
   bitsToInt,
   bytesToBits,
   numberToBytes,
-  numberToHex,
-  numberToAscii,
-  bytesToNumber
 } from "./converters";
 
 const dispatcher = new Dispatcher('StreamManager', [
@@ -41,7 +37,9 @@ export const removeEventListener = dispatcher.removeListener;
 
 const isPacketInRange = (packetIndex) => {
   // Blindly accept. We can't do anything about it for now
-  if(!isSizeTrusted()) return true;
+  if(!isSizeTrusted()){
+    return packetIndex < PacketUtils.getMaxPackets();
+  }
   const { packetCount } = PacketUtils.packetStats(getSize());
   return packetIndex < packetCount;
 }
@@ -125,11 +123,23 @@ export const applyPacket = ({
   }
   delete BITS[packetIndex]
 }
-export const getFailedPacketIndeces = () => FAILED_SEQUENCES;
+export const getFailedPacketIndeces = () => {
+  return FAILED_SEQUENCES.filter(isPacketInRange);
+}
+export const getNeededPacketIndeces = () => {
+  if(!isSizeTrusted()) return getFailedPacketIndeces();
+  const packetCount = countExpectedPackets();
+  let indeces = [];
+  for(let i = 0; i < packetCount; i++) {
+    if(SUCCESS_SEQUENCES.includes(i)) continue;
+    indeces.push(i);
+  }
+  return indeces;
+};
 export const countFailedPackets = () => FAILED_SEQUENCES.length;
 export const countSuccessfulPackets = () => SUCCESS_SEQUENCES.length;
 export const countExpectedPackets = () => {
-  if(!isSizeTrusted()) return 0;
+  if(!isSizeTrusted()) return PacketUtils.getMaxPackets();
   return PacketUtils.packetStats(getSize()).packetCount;
 }
 export const setPacketsExpected = packetCount => {
@@ -138,11 +148,27 @@ export const setPacketsExpected = packetCount => {
   SAMPLES_EXPECTED = packetCount * PacketUtils.getPacketSegmentCount();
 }
 
+const hasPackets = (start, end) => {
+  for(let packetIndex = start; packetIndex <= end; packetIndex++) {
+    // We need this packet, but it failed to transfer
+    if(FAILED_SEQUENCES.includes(packetIndex)) return false;
+    // We need this packet, but it hasn't come through yet
+    if(!SUCCESS_SEQUENCES.includes(packetIndex)) return false;
+  }
+  return true;
+}
+const hasBytes = (index, length) => {
+  if(DATA.length < index + length) return false;
+  const packetSize = PacketUtils.getPacketDataByteCount();
+  const start = Math.floor(index / packetSize);
+  const end = Math.floor(index + length / packetSize);
+  return hasPackets(start, end);
+}
 export const getSizeAvailable = () => {
   if(DATA_SIZE_BIT_COUNT === 0) return 1;
   let lastBit = DATA_SIZE_BIT_COUNT;
   let lastByte = Math.ceil(lastBit / 8);
-  if(DATA.length < lastByte) return false;
+  if(!hasBytes(0, lastByte)) return false;
 
   // Do we have a crc check on the size?
   if(DATA_SIZE_CRC_BIT_COUNT !== 0) {
@@ -209,21 +235,22 @@ export const getSizeCrcAvailable = () => {
   if (DATA_SIZE_BIT_COUNT === 0) return false;
   if (DATA_SIZE_CRC_BIT_COUNT === 0) return false;
   const bitsNeeded = DATA_SIZE_BIT_COUNT + DATA_SIZE_CRC_BIT_COUNT;
-  return DATA.length >= Math.ceil(bitsNeeded / 8);
+  const bytesNeeded = Math.ceil(bitsNeeded / 8);
+  return hasBytes(0, bytesNeeded);
 }
 export const getCrcAvailable = () => {
   if(DATA_CRC_BIT_COUNT === 0) return false;
   if(!getSizeAvailable()) return false;
   let byteCount = getSize();
-  if(DATA.length < byteCount) return false;
+
   // Do we have enough bytes for the headers and underlying data?
   let headerBitCount = DATA_SIZE_BIT_COUNT + DATA_CRC_BIT_COUNT + DATA_SIZE_CRC_BIT_COUNT;
   if(headerBitCount % 8 !== 0)
     headerBitCount += 8 - (headerBitCount % 8);
   const headerByteCount = headerBitCount / 8;
   byteCount += headerByteCount;
-
-  return DATA.length >= byteCount;
+  
+  return hasBytes(0, byteCount);
 }
 export const getSizeCrcPassed = () => {
   if(!getSizeCrcAvailable()) return false;

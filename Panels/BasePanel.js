@@ -231,6 +231,14 @@ class BasePanel {
     const element = this.getElement(id);
     element.innerHTML = html;
   }
+  getHtmlById = (id) => {
+    const element = this.getElement(id);
+    return element.innerHTML;
+  }
+  scrollToBottom = id => {
+    const element = this.getElement(id);
+    element.scrollIntoView(false);
+  }
   getNumberById = id => {
     const value = this.getValueById(id);
     return parseFloat(value);

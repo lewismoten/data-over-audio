@@ -1,8 +1,8 @@
 import BasePanel from './BasePanel';
 
-class CommunicationsPanel extends BasePanel {
+class OutputPanel extends BasePanel {
   constructor() {
-    super('Audio Sender');
+    super('Outut');
     this.addRadios('send-via', [
       {text: 'Analyzer', id: 'send-via-analyzer', eventName: 'sendAnalyzerChange'},
       {text: 'Speakers', id: 'send-via-speaker', eventName: 'sendSpeakersChange'}
@@ -12,4 +12,4 @@ class CommunicationsPanel extends BasePanel {
   setSendAnalyzer = checked => this.setCheckedById('send-via-analyzer', checked);
 }
 
-export default CommunicationsPanel;
+export default OutputPanel;

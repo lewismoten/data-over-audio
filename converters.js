@@ -90,3 +90,8 @@ export const bytesToUrl = bytes => {
   const blob = new Blob([new Uint8Array(bytes)]);
   return URL.createObjectURL(blob);
 }
+export function htmlEncode(text) {
+  const element = document.createElement('div');
+  element.textContent = text;
+  return element.innerHTML;
+}

@@ -20,8 +20,8 @@ class PacketErrorPanel extends BasePanel {
     this.addSection('Packet Retransmission')
 
     this.addRadios('repeat', [
-      { text: 'Automatic Repeat Request', value: 'arq', checked: true, eventName: 'hi' },
-      { text: 'Manual Repeat Request', value: 'manual', checked: true, eventName: 'hi' }
+      { text: 'Automatic Repeat Request', id:'arq', value: 'arq', checked: true, eventName: 'automaticRepeatRequestChange' },
+      { text: 'Manual Repeat Request', id:'manual', value: 'manual', checked: true, eventName: 'manualRepeatRequestChange' }
     ]);
   
     this.openField('Packets');
@@ -29,6 +29,9 @@ class PacketErrorPanel extends BasePanel {
     this.closeField();
 
     this.addButton('request-button', 'Request', 'requestPackets');
+  }
+  getAutomaticRepeatRequest = () => {
+    return this.getCheckedById('arq');
   }
   reset = () => {
     this.setFailedPacketIndeces([]);
@@ -41,7 +44,7 @@ class PacketErrorPanel extends BasePanel {
   }
   getFailedPacketIndeces = () => {
     let text = this.getValueById('request-packet-indexes');
-    return text.replace(/\s+/g, '').split(',').map(Number);
+    return text.replace(/\s+/g, '').split(',').filter(v => v !== '').map(Number);
   }
   setCrcPassed = (passed) => this.setValueById('crc', passed ? 'Pass' : 'Fail');
   setCrcUnavailable = () => this.setValueById('crc', 'N/A');

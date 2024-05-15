@@ -1,3 +1,4 @@
+import { htmlEncode } from '../converters';
 import BasePanel from './BasePanel';
 
 class CodePanel extends BasePanel {
@@ -6,6 +7,18 @@ class CodePanel extends BasePanel {
     this.addCode('code');
   }
   setCode = (html) => this.setHtmlById('code', html);
+  appendCode = html => {
+    let current = this.getHtmlById('code');
+    if(current !== '') current += document.createElement('br').outerHTML;
+    this.setHtmlById('code', current + html);
+    this.scrollToBottom('code');
+  }
+  appendText = text => {
+    let current = this.getHtmlById('code');
+    if(current !== '') current += document.createElement('br').outerHTML;
+    this.setHtmlById('code', current + htmlEncode(text));
+    this.scrollToBottom('code');
+  }
 }
 
 export default CodePanel;

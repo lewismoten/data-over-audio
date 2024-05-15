@@ -109,7 +109,8 @@ class FrequencyGraphPanel extends BasePanel {
     const canvas = this.getElement('frequency-graph');
     const ctx = canvas.getContext('2d');
     const {height, width} = canvas;
-    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, width, height);
     let now;
 
     if(this.samples.length > 1) {

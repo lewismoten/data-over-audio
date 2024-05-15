@@ -10,12 +10,6 @@
 <body>
   <h1>Data Over Audio</h1>
   <div class="panels" id="panel-container">
-    <div class="chart">
-      <h2>Channel Graph</h2>
-      <div>
-      <canvas id="received-channel-graph" width="800" height="300"></canvas>
-    </div>
-    </div>
     <div>
       <h2>Data</h2>
       <div>
@@ -29,18 +23,6 @@
       </div>
     </div>
     <div>
-      <h2>Original Data to send</h2>
-      <div>
-        <div class="raw-data" id="sent-data"></div><br />
-      </div>
-    </div>
-    <div>
-      <h2>Encoded packets to send</h2>
-      <div>
-        <div class="raw-data" id="error-correcting-data"></div>
-      </div>
-    </div>
-    <div>
       <h2>Decoded</h2>
       <div>
         Bytes: <span id="received-packet-original-bytes">N/A</span><br>
@@ -50,18 +32,6 @@
         Encoded Segments: <span id="received-raw-bits-error-percent">N/A</span>%<br>
         Encoded Packets: <span id="received-encoded-bits-error-percent">N/A</span>%<br>
         Decoded Packets: <span id="received-decoded-bits-error-percent">N/A</span>%<br />
-      </div>
-    </div>
-    <div>
-      <h2>Encoded Packets Received</h2>
-      <div>
-        <div class="raw-data" id="received-encoded-bits"></div><br />
-      </div>
-    </div>
-    <div>
-      <h2>Decoded Packets Received</h2>
-      <div>
-        <div class="raw-data" id="received-decoded-bits"></div><br />
       </div>
     </div>
     <div>
