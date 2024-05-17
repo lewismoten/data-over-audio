@@ -1,10 +1,11 @@
 import BasePanel from './BasePanel.js';
 
+const SAMPLE_RATE_CAP = 41000; // 48000 on iPhone
 class FrequencyPanel extends BasePanel {
   constructor() {
     super('Frequencies');
 
-    this.sampleRate = 48000;
+    this.sampleRate = SAMPLE_RATE_CAP;
     const ultimateFrequency = this.sampleRate / 2;
 
     this.addCanvas('frequency-spectrum', 200, 32);
@@ -78,8 +79,7 @@ class FrequencyPanel extends BasePanel {
   handleFftSizeChanged = () => {
     const fftSize = this.getFftSize();
     this.setValueById('fft-size', fftSize.toLocaleString());
-    const resolution = this.sampleRate / fftSize;
-    this.setValueById('frequency-resolution-size', parseFloat(resolution.toFixed(1)).toLocaleString());
+    this.checkFskPairsChanged();
   }
 
   getFskPadding = () =>  parseInt(this.getValueById('fsk-padding'));
@@ -97,6 +97,21 @@ class FrequencyPanel extends BasePanel {
   checkFskPairsChanged = () => {
     const original = this.originalFskPairs;
     const current = this.getFskPairs();
+
+    const fftSize = this.getFftSize();
+    const resolution = this.sampleRate / fftSize;
+    if(this.sampleRate > SAMPLE_RATE_CAP) {
+      const resolutionCap = SAMPLE_RATE_CAP / fftSize;
+      this.setValueById(
+        'frequency-resolution-size', 
+        parseFloat(resolution.toFixed(1)).toLocaleString() 
+        + " / " +
+        parseFloat(resolutionCap.toFixed(1)).toLocaleString() 
+      );
+    } else {
+      this.setValueById('frequency-resolution-size', parseFloat(resolution.toFixed(1)).toLocaleString());
+    }
+
     let changed = true;
     if(original.length !== current.length) {
       changed = true;
@@ -112,11 +127,10 @@ class FrequencyPanel extends BasePanel {
     }
   }
   getFskPairs = () => {
-    const sampleRate = this.sampleRate;
     const fftSize = this.getFftSize();
     const fskPadding = this.getFskPadding();
     const multiFskPadding = this.getMultiFskPadding();
-    const frequencyResolution = sampleRate / fftSize;
+    const frequencyResolution = Math.min(this.sampleRate, SAMPLE_RATE_CAP) / fftSize;
     const fskPairs = [];
     const multiFskStep = frequencyResolution * (2 + multiFskPadding) * fskPadding;
     const minimumFrequency = this.getMinimumFrequency();
@@ -131,7 +145,7 @@ class FrequencyPanel extends BasePanel {
     return fskPairs;
   }
   drawFrequencySpectrum = () => {
-    const ultimateFrequency = this.sampleRate / 2;
+    const ultimateFrequency = SAMPLE_RATE_CAP / 2;
     const fskPairs = this.getFskPairs();
     const canvas = this.getElement('frequency-spectrum');
     const ctx = canvas.getContext('2d');
