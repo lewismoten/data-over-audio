@@ -1,7 +1,7 @@
 import { bytesToText, bytesToUrl } from '../converters.js';
 import BasePanel from './BasePanel.js';
 import * as AudioReceiver from '../AudioReceiver.js';
-
+const NO_IMAGE = 'transparent.png';
 class ReceivePanel extends BasePanel {
   constructor() {
     super('Audio Receiver');
@@ -17,7 +17,7 @@ class ReceivePanel extends BasePanel {
     this.addProgressBar('progress', 0, 0);
 
     this.addCode('text', '', 'small');
-    this.addImage('image', undefined, {width: 32, height: 32});
+    this.addImage('image', NO_IMAGE, {width: 32, height: 32});
     this.setDataType('text');
 
     this.dispatcher.addListener('onlineChange', (e) => {
@@ -64,11 +64,14 @@ class ReceivePanel extends BasePanel {
   }
   setReceivedHtml = (html) => this.setHtmlById('text', html);
   setReceivedBytes = bytes => {
-    console.log('received', bytes);
     if(this.dataType === 'text') {
       this.setValueById('text', bytesToText(bytes));
     } else {
-      this.setValueById('image', bytesToUrl(bytes));
+      if(bytes !== undefined && bytes.length > 0) {
+        this.setValueById('image', bytesToUrl(bytes));
+      } else {
+        this.setValueById('image', NO_IMAGE);
+      }
     }
   }
 
