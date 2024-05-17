@@ -64,6 +64,7 @@ class ReceivePanel extends BasePanel {
   }
   setReceivedHtml = (html) => this.setHtmlById('text', html);
   setReceivedBytes = bytes => {
+    console.log('received', bytes);
     if(this.dataType === 'text') {
       this.setValueById('text', bytesToText(bytes));
     } else {

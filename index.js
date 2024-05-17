@@ -73,7 +73,7 @@ function handleWindowLoad() {
   outputPanel.setSendAnalyzer(true);
 
   messagePanel.setMessageText(Randomizer.text(5));
-  messagePanel.setDataType('image');
+  messagePanel.setDataType('text');
   messagePanel.setSendButtonText('Send');
 
   messagePanel.addEventListener('dataTypeChange', ({values: [dataType]}) => {
@@ -94,19 +94,19 @@ function handleWindowLoad() {
   frequencyPanel.setMinimumFrequency(300);
   frequencyPanel.setMaximumFrequency(3400);
   frequencyPanel.setFftSize(2 ** 11);
-  frequencyPanel.setFskPadding(2);
-  frequencyPanel.setMultiFskPadding(3);
+  frequencyPanel.setFskPadding(20);
+  frequencyPanel.setMultiFskPadding(5);
 
   signalPanel.setWaveform('triangle');
   signalPanel.setSegmentDurationMilliseconds(30);
   signalPanel.setAmplitudeThreshold(0.78);
   signalPanel.setSmoothingTimeConstant(0);
-  signalPanel.setTimeoutMilliseconds(60);
+  signalPanel.setTimeoutMilliseconds(1000);
 
   packetizationPanel.setDataSizePower(12);
   packetizationPanel.setDataSizeCrc(8);
   packetizationPanel.setDataCrc(16);
-  packetizationPanel.setSizePower(6);
+  packetizationPanel.setSizePower(4);
   packetizationPanel.setPacketCrc(8);
   packetizationPanel.setSequenceNumberPower(8);
 
@@ -483,8 +483,14 @@ function sendPackets(bytes, packetIndeces) {
 
   const requestedPacketCount = packetIndeces.length;
 
-  AudioSender.setAudioContext(getAudioContext());
+  const audioContext = getAudioContext();
 
+  AudioSender.setAudioContext(audioContext);
+
+  if(audioContext.state !== "running") {
+    statusPanel.appendText(`Expected audio context to be running. State: ${audioContext.state}`);
+  }
+  
   const startSeconds = AudioSender.now() + 0.1;
   const packetBitCount = PacketUtils.getPacketMaxBitCount();
   const packer = PacketUtils.pack(bytes);
