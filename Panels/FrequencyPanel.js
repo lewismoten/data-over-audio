@@ -1,6 +1,6 @@
 import BasePanel from './BasePanel.js';
 
-const SAMPLE_RATE_CAP = 41000; // 48000 on iPhone
+const SAMPLE_RATE_CAP = 44100; // 48000 on iPhone
 class FrequencyPanel extends BasePanel {
   constructor() {
     super('Frequencies');
