@@ -127,12 +127,18 @@ export const getFailedPacketIndeces = () => {
   return FAILED_SEQUENCES.filter(isPacketInRange);
 }
 export const getNeededPacketIndeces = () => {
-  if(!isSizeTrusted()) return getFailedPacketIndeces();
-  const packetCount = countExpectedPackets();
+  let packetCount;
+  if(!isSizeTrusted()) {
+    packetCount = getFailedPacketIndeces().reduce((max, i) => Math.max(max, i));
+  } else {
+    packetCount = countExpectedPackets();
+  }
   let indeces = [];
   for(let i = 0; i < packetCount; i++) {
     if(SUCCESS_SEQUENCES.includes(i)) continue;
     indeces.push(i);
+    // cut off in case a failed packet returned a high number
+    if(indeces.length > 20) break;
   }
   return indeces;
 };
