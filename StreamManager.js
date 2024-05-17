@@ -90,7 +90,7 @@ export const applyPacket = ({
   const dataSize = PacketUtils.getPacketDataByteCount();
   const offset = sequence * dataSize;
   const length = offset + dataSize;
-  if(crc === actualCrc) {
+  if(crc === actualCrc && size !== 0) {
     if(FAILED_SEQUENCES.includes(sequence)) {
       FAILED_SEQUENCES.splice(FAILED_SEQUENCES.indexOf(sequence), 1);
     }
@@ -178,7 +178,10 @@ export const getSizeAvailable = () => {
 }
 export const isSizeTrusted = () => {
   if(!getSizeAvailable()) return false;
-  if(DATA_SIZE_CRC_BIT_COUNT !== 0) return getSizeCrcPassed();
+  if(DATA_SIZE_CRC_BIT_COUNT !== 0) {
+    if(getSize() === 0) return false;
+    return getSizeCrcPassed();
+  }
   return true;
 }
 export const getSize = () => {
