@@ -219,11 +219,6 @@ export const pack = (bytes) => {
       ...dataLengthCrcBits,
       ...dataCrcBits,
     ];
-    // pad headers to take full bytes
-    while(headers.length % 8 !== 0) {
-      headers.push(0);
-    }
-
     const unusedBitCount = getPacketizationHeaderUnusedBitCount();
     headers.push(...new Array(unusedBitCount).fill(0));
 
