@@ -267,7 +267,8 @@ function updateFrequencyResolution() {
   const fftSize = frequencyPanel.getFftSize();
   const frequencyResolution = sampleRate / fftSize;
   const frequencyCount = (sampleRate/2) / frequencyResolution;
-  document.getElementById('frequency-resolution').innerText = frequencyResolution.toFixed(2);
+  
+  document.getElementById('frequency-resolution').innerText = frequencyPanel.getFrequencyResolutionSize();;
   document.getElementById('frequency-count').innerText = frequencyCount.toFixed(2);
 }
 

@@ -93,7 +93,9 @@ class FrequencyPanel extends BasePanel {
     this.setValueById('multi-fsk-padding', value);
     this.checkFskPairsChanged();
   }
-
+  getFrequencyResolutionSize = () => {
+    return this.getValueById('frequency-resolution-size');
+  }
   checkFskPairsChanged = () => {
     const original = this.originalFskPairs;
     const current = this.getFskPairs();
