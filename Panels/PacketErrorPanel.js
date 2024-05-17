@@ -14,7 +14,10 @@ class PacketErrorPanel extends BasePanel {
 
     this.openField('Failed Packets');
     this.addDynamicText('failed-packet-count', 'N/A');
-    this.addDynamicText('failed-packet-count-percent', '');
+    this.closeField();
+
+    this.openField('Successful Packets');
+    this.addDynamicText('successful-packet-count', 'N/A');
     this.closeField();
 
     this.addSection('Packet Retransmission')
@@ -35,13 +38,16 @@ class PacketErrorPanel extends BasePanel {
   }
   reset = () => {
     this.setFailedPacketIndeces([]);
+    this.setFailedPacketCountUnavailable();
     this.setSizeCrcUnavailable();
     this.setCrcUnavailable();
+    this.setSuccessfulPacketCountUnavailable();
   }
   setFailedPacketIndeces = (packetIndexes) => {
     this.setValueById('request-packet-indexes', packetIndexes.join(', '));
     this.setValueById('failed-packet-count', packetIndexes.length.toLocaleString());
   }
+  setFailedPacketCountUnavailable = () => this.setValueById('failed-packet-count', 'N/A');
   getFailedPacketIndeces = () => {
     let text = this.getValueById('request-packet-indexes');
     return text.replace(/\s+/g, '').split(',').filter(v => v !== '').map(Number);
@@ -50,6 +56,8 @@ class PacketErrorPanel extends BasePanel {
   setCrcUnavailable = () => this.setValueById('crc', 'N/A');
   setSizeCrcPassed = (passed) => this.setValueById('crc-size', passed ? 'Pass' : 'Fail');
   setSizeCrcUnavailable = () => this.setValueById('crc-size', 'N/A');
+  setSuccessfulPacketCount = (count) => this.setValueById('successful-packet-count', count.toLocaleString());
+  setSuccessfulPacketCountUnavailable = () => this.setValueById('successful-packet-count', 'N/A')
 }
 
 export default PacketErrorPanel;

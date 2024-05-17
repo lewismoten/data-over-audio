@@ -43,8 +43,6 @@ class ReceivePanel extends BasePanel {
     });
 
     this.addEventListener('resetClick', () => {
-      AudioReceiver.reset();
-      StreamManager.reset();
       this.setReceivedBytes([]);
       this.setExpectedPacketCount(0);
       this.setFailedPacketCount(0);

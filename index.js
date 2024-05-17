@@ -91,11 +91,11 @@ function handleWindowLoad() {
   // bitsSentPanel.setCode('');
   // bitsReceivedPanel.setCode('');
 
-  frequencyPanel.setMinimumFrequency(2500);
-  frequencyPanel.setMaximumFrequency(23000);
-  frequencyPanel.setFftSize(2 ** 9);
-  frequencyPanel.setFskPadding(3);
-  frequencyPanel.setMultiFskPadding(4);
+  frequencyPanel.setMinimumFrequency(300);
+  frequencyPanel.setMaximumFrequency(3400);
+  frequencyPanel.setFftSize(2 ** 11);
+  frequencyPanel.setFskPadding(2);
+  frequencyPanel.setMultiFskPadding(3);
 
   signalPanel.setWaveform('triangle');
   signalPanel.setSegmentDurationMilliseconds(30);
@@ -103,12 +103,12 @@ function handleWindowLoad() {
   signalPanel.setSmoothingTimeConstant(0);
   signalPanel.setTimeoutMilliseconds(60);
 
-  packetizationPanel.setSizePower(5);
-  packetizationPanel.setDataSizePower(16);
+  packetizationPanel.setDataSizePower(12);
   packetizationPanel.setDataSizeCrc(8);
   packetizationPanel.setDataCrc(16);
+  packetizationPanel.setSizePower(6);
   packetizationPanel.setPacketCrc(8);
-  packetizationPanel.setSequenceNumberPower(16);
+  packetizationPanel.setSequenceNumberPower(8);
 
   packetizationPanel.setErrorCorrection(true);
   packetizationPanel.setInterleaving(true);
@@ -196,6 +196,12 @@ function handleWindowLoad() {
   receivePanel.addEventListener('start', handleReceivePanelStart);
   receivePanel.addEventListener('receive', handleReceivePanelReceive);
   receivePanel.addEventListener('end', handleReceivePanelEnd);
+  receivePanel.addEventListener('resetClick', () => {
+    AudioReceiver.stop();
+    AudioReceiver.reset();
+    StreamManager.reset();
+    packetErrorPanel.reset();
+  });
 
   packetErrorPanel.addEventListener('requestPackets', requestFailedPackets);
 
@@ -223,6 +229,7 @@ function handleWindowLoad() {
   });
   StreamManager.addEventListener('packetReceived', () => {
     receivePanel.setSuccessfulPacketCount(StreamManager.countSuccessfulPackets());
+    packetErrorPanel.setSuccessfulPacketCount(StreamManager.countSuccessfulPackets());
     
     // Failed indices changed?
     receivePanel.setFailedPacketCount(StreamManager.countFailedPackets());
