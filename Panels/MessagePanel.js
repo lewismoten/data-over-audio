@@ -1,6 +1,6 @@
-import { bytesToText, textToBytes, urlToBytes, bytesToUrl } from '../converters';
-import { byteSize } from '../Humanize';
-import BasePanel from './BasePanel';
+import { bytesToText, textToBytes, urlToBytes, bytesToUrl } from '../converters.js';
+import { byteSize } from '../Humanize.js';
+import BasePanel from './BasePanel.js';
 
 class MessagePanel extends BasePanel {
   constructor() {

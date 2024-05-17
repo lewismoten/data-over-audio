@@ -1,4 +1,4 @@
-import BasePanel from './BasePanel';
+import BasePanel from './BasePanel.js';
 
 class PacketErrorPanel extends BasePanel {
   constructor() {

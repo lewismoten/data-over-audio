@@ -1,7 +1,6 @@
-import { bytesToText, bytesToUrl } from '../converters';
-import BasePanel from './BasePanel';
-import * as AudioReceiver from '../AudioReceiver';
-import * as StreamManager from '../StreamManager';
+import { bytesToText, bytesToUrl } from '../converters.js';
+import BasePanel from './BasePanel.js';
+import * as AudioReceiver from '../AudioReceiver.js';
 
 class ReceivePanel extends BasePanel {
   constructor() {

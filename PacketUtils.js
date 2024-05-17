@@ -5,8 +5,8 @@ import {
   numberToBytes,
   numberToHex,
   bytesToBits
- } from "./converters";
-import * as CRC from './CRC';
+ } from "./converters.js";
+import * as CRC from './CRC.js';
 
 let SEGMENT_DURATION = 30;
 let PACKET_SIZE_BITS = 8;

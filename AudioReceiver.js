@@ -1,4 +1,4 @@
-import Dispatcher from "./Dispatcher";
+import Dispatcher from "./Dispatcher.js";
 
 const dispatcher = new Dispatcher('AudioReceiver', ['begin', 'end', 'receive']);
 const noEncoding = bits => bits;

@@ -1,4 +1,4 @@
-import BasePanel from './BasePanel';
+import BasePanel from './BasePanel.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 

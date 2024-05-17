@@ -1,4 +1,4 @@
-import BasePanel from './BasePanel';
+import BasePanel from './BasePanel.js';
 
 const media = {
   audio: {

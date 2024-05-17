@@ -1,5 +1,5 @@
-import BasePanel from './BasePanel';
-import * as Humanize from '../Humanize';
+import BasePanel from './BasePanel.js';
+import * as Humanize from '../Humanize.js';
 
 class SpeedPanel extends BasePanel {
   constructor() {

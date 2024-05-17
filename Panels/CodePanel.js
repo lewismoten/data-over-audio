@@ -1,5 +1,5 @@
-import { htmlEncode } from '../converters';
-import BasePanel from './BasePanel';
+import { htmlEncode } from '../converters.js';
+import BasePanel from './BasePanel.js';
 
 class CodePanel extends BasePanel {
   constructor(title) {

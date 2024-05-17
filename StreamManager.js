@@ -1,11 +1,11 @@
-import Dispatcher from "./Dispatcher";
-import * as CRC from './CRC';
-import * as PacketUtils from './PacketUtils';
+import Dispatcher from "./Dispatcher.js";
+import * as CRC from './CRC.js';
+import * as PacketUtils from './PacketUtils.js';
 import { 
   bitsToInt,
   bytesToBits,
   numberToBytes,
-} from "./converters";
+} from "./converters.js";
 
 const dispatcher = new Dispatcher('StreamManager', [
   'change',

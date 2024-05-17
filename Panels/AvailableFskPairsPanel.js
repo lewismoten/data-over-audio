@@ -1,5 +1,5 @@
-import BasePanel from './BasePanel';
-import { hertz } from '../Humanize';
+import BasePanel from './BasePanel.js';
+import { hertz } from '../Humanize.js';
 class AvailableFskPairsPanel extends BasePanel {
   constructor() {
     super('Available FSK Pairs');

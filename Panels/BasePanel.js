@@ -1,4 +1,4 @@
-import Dispatcher from "../Dispatcher";
+import Dispatcher from "../Dispatcher.js";
 
 let lastId = 0;
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));

@@ -1,5 +1,5 @@
-import BasePanel from './BasePanel';
-import { byteSize, metricNumber } from '../Humanize';
+import BasePanel from './BasePanel.js';
+import { byteSize, metricNumber } from '../Humanize.js';
 
 class PacketizationPanel extends BasePanel {
   constructor() {
