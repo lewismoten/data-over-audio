@@ -94,12 +94,12 @@ function handleWindowLoad() {
   frequencyPanel.setMinimumFrequency(300);
   frequencyPanel.setMaximumFrequency(3400);
   frequencyPanel.setFftSize(2 ** 11);
-  frequencyPanel.setFskPadding(20);
-  frequencyPanel.setMultiFskPadding(5);
+  frequencyPanel.setFskPadding(4);
+  frequencyPanel.setMultiFskPadding(2);
 
   signalPanel.setWaveform('triangle');
-  signalPanel.setSegmentDurationMilliseconds(30);
-  signalPanel.setAmplitudeThreshold(0.78);
+  signalPanel.setSegmentDurationMilliseconds(65);
+  signalPanel.setAmplitudeThreshold(0.3);
   signalPanel.setSmoothingTimeConstant(0);
   signalPanel.setTimeoutMilliseconds(1000);
 
