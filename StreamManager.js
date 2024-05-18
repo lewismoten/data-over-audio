@@ -11,7 +11,8 @@ const dispatcher = new Dispatcher('StreamManager', [
   'change',
   'packetReceived',
   'packetFailed',
-  'sizeReceived'
+  'sizeReceived',
+  'crcAvailable'
 ]);
 let DATA = new Uint8ClampedArray();
 let FAILED_SEQUENCES = [];
@@ -85,8 +86,8 @@ export const applyPacket = ({
   size
 }) => {
   let trustedSize = isSizeTrusted();
+  let crcAvailable = getCrcAvailable();
   if(!isPacketInRange(sequence)) return;
-  
   const dataSize = PacketUtils.getPacketDataByteCount();
   const offset = sequence * dataSize;
   const length = offset + dataSize;
@@ -102,14 +103,27 @@ export const applyPacket = ({
       copy.set(DATA.subarray(0, DATA.length), 0);
       DATA = copy;
     }
+
+    // NOTE: overwrites prior successful packets
     DATA.set(bytes, offset);
 
     if(!trustedSize && isSizeTrusted()) {
+      const dataSize = getSize();
+      const headerSize = getStreamHeaderByteCount();
+      const totalLength = dataSize + headerSize;
       // We may now have a trusted size. update prior failures.
       FAILED_SEQUENCES = FAILED_SEQUENCES.filter(isPacketInRange);
+      // Prior failed packets may have made our array to big
+      if(DATA.length > totalLength) {
+        const copy = new Uint8ClampedArray(totalLength);
+        copy.set(DATA.subarray(0, totalLength), 0);
+        DATA = copy;
+      }
       dispatcher.emit('sizeReceived');
     }
-
+    if(!crcAvailable && getCrcAvailable()) {
+      dispatcher.emit('crcAvailable');
+    }
     dispatcher.emit('packetReceived');
   } else {
     // do nothing if previously successful
@@ -130,7 +144,7 @@ export const getNeededPacketIndeces = () => {
   let packetCount;
   let sizeTrusted = isSizeTrusted();
   if(!sizeTrusted) {
-    packetCount = getFailedPacketIndeces().reduce((max, i) => Math.max(max, i));
+    packetCount = getFailedPacketIndeces().reduce((max, i) => Math.max(max, i), 0);
   } else {
     packetCount = countExpectedPackets();
   }
@@ -169,10 +183,10 @@ export const setPacketsExpected = packetCount => {
 
 const hasPackets = (start, end) => {
   for(let packetIndex = start; packetIndex <= end; packetIndex++) {
-    // We need this packet, but it failed to transfer
-    if(FAILED_SEQUENCES.includes(packetIndex)) return false;
     // We need this packet, but it hasn't come through yet
     if(!SUCCESS_SEQUENCES.includes(packetIndex)) return false;
+    // We need this packet, but it failed to transfer
+    if(FAILED_SEQUENCES.includes(packetIndex)) return false;
   }
   return true;
 }
@@ -180,7 +194,7 @@ const hasBytes = (index, length) => {
   if(DATA.length < index + length) return false;
   const packetSize = PacketUtils.getPacketDataByteCount();
   const start = Math.floor(index / packetSize);
-  const end = Math.floor(index + length / packetSize);
+  const end = Math.floor((index + --length) / packetSize);
   return hasPackets(start, end);
 }
 export const getSizeAvailable = () => {
@@ -228,13 +242,12 @@ export const getSizeCrc = () => {
 
   let startBitIndex = DATA_SIZE_BIT_COUNT;
   let endBitIndex = startBitIndex + DATA_SIZE_CRC_BIT_COUNT;
-
   let startByte = Math.floor(startBitIndex / 8);
   let endByte = Math.ceil(endBitIndex / 8);
   if(DATA.length < endByte) return CRC.INVALID;
 
   let bits = bytesToBits(DATA.subarray(startByte, endByte));
-  if(startBitIndex % 8 !== 0) bits.splice(0, startBitIndex);
+  if(startBitIndex % 8 !== 0) bits.splice(0, startBitIndex % 8);
   bits.length = DATA_SIZE_CRC_BIT_COUNT;
   return bitsToInt(bits, DATA_SIZE_CRC_BIT_COUNT);
 }
@@ -249,7 +262,7 @@ export const getCrc = () => {
   if(DATA.length < endByte) return CRC.INVALID;
 
   let bits = bytesToBits(DATA.subarray(startByte, endByte));
-  if(startBitIndex % 8 !== 0) bits.splice(0, startBitIndex);
+  if(startBitIndex % 8 !== 0) bits.splice(0, startBitIndex % 8);
   bits.length = DATA_CRC_BIT_COUNT;
   return bitsToInt(bits, DATA_CRC_BIT_COUNT);
 }
@@ -272,7 +285,7 @@ export const getCrcAvailable = () => {
   const headerByteCount = headerBitCount / 8;
   byteCount += headerByteCount;
   
-  return hasBytes(0, byteCount);
+  return hasBytes(0, byteCount); // 487 + 5 = 492
 }
 export const getSizeCrcPassed = () => {
   if(!getSizeCrcAvailable()) return false;

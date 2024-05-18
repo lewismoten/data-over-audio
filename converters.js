@@ -1,8 +1,13 @@
 export const numberToBytes = (number, bitLength) => {
-  const byteCount = Math.ceil(bitLength/8);
   const bytes = [];
-  for(let i = 0; i < byteCount; i++) {
-    bytes.push((number >> (8 * (byteCount - 1 - i))) & 0xFF);
+  let byte = 0;
+  for(let i = 0; i < bitLength; i++) {
+    let bit = (number >> (bitLength - 1 - i)) & 1;
+    byte = (byte << 1) | bit;
+    if((i + 1) % 8 === 0 || i === bitLength - 1) {
+      bytes.push(byte);
+      byte = 0;
+    }
   }
   return bytes;
 }

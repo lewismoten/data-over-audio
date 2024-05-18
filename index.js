@@ -223,6 +223,9 @@ function handleWindowLoad() {
   StreamManager.addEventListener('sizeReceived', () => {
     receivePanel.setExpectedPacketCount(StreamManager.countExpectedPackets());
   });
+  StreamManager.addEventListener('crcAvailable', () => {
+    packetErrorPanel.setCrcPassed(StreamManager.getCrcPassed());
+  });
   StreamManager.addEventListener('packetFailed', () => {
     receivePanel.setFailedPacketCount(StreamManager.countFailedPackets());
     packetErrorPanel.setFailedPacketIndeces(StreamManager.getFailedPacketIndeces());
