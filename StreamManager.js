@@ -128,7 +128,8 @@ export const getFailedPacketIndeces = () => {
 }
 export const getNeededPacketIndeces = () => {
   let packetCount;
-  if(!isSizeTrusted()) {
+  let sizeTrusted = isSizeTrusted();
+  if(!sizeTrusted) {
     packetCount = getFailedPacketIndeces().reduce((max, i) => Math.max(max, i));
   } else {
     packetCount = countExpectedPackets();
@@ -148,7 +149,9 @@ export const getNeededPacketIndeces = () => {
     if(SUCCESS_SEQUENCES.includes(i)) continue;
     indeces.push(i);
     // cut off in case a failed packet returned a high number
-    if(indeces.length > 20) break;
+    if(!sizeTrusted && indeces.length >= 10) break;
+    // lets not ask for too much
+    if(indeces.length >= 50) break;
   }
   return indeces;
 };
