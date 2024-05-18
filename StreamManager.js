@@ -133,6 +133,16 @@ export const getNeededPacketIndeces = () => {
   } else {
     packetCount = countExpectedPackets();
   }
+  // Size should not be zero. Size CRC must pass
+  if(getSize() === 0 || (getSizeCrcAvailable() && !getSizeCrcPassed())) {
+    // Assumeing size & crc only in packet 0
+    if(!FAILED_SEQUENCES.includes(0)) {
+      FAILED_SEQUENCES.push(0);
+    }
+    if(SUCCESS_SEQUENCES.includes(0)) {
+      SUCCESS_SEQUENCES = SUCCESS_SEQUENCES.filter(v => v === 0);
+    }
+  }
   let indeces = [];
   for(let i = 0; i < packetCount; i++) {
     if(SUCCESS_SEQUENCES.includes(i)) continue;
