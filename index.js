@@ -75,6 +75,7 @@ function handleWindowLoad() {
   messagePanel.setMessageText(Randomizer.text(5));
   messagePanel.setDataType('text');
   messagePanel.setSendButtonText('Send');
+  messagePanel.setIsFirstPacketSentTwice(true);
 
   messagePanel.addEventListener('dataTypeChange', ({values: [dataType]}) => {
     receivePanel.setDataType(dataType);
@@ -491,16 +492,24 @@ function sendPackets(bytes, packetIndeces) {
 
   AudioSender.setAudioContext(audioContext);
 
+  const sendFirstTwice = messagePanel.getIsFirstPacketSentTwice();
+
   if(audioContext.state !== "running") {
     statusPanel.appendText(`Expected audio context to be running. State: ${audioContext.state}`);
   }
   
-  const startSeconds = AudioSender.now() + 0.1;
+  let startSeconds = AudioSender.now() + 0.1;
   const packetBitCount = PacketUtils.getPacketMaxBitCount();
   const packer = PacketUtils.pack(bytes);
 
   try {
     AudioSender.beginAt(startSeconds);
+    if(sendFirstTwice) {
+      let packet = packer.getBits(packetIndeces[0]);
+      packet.push(...new Array(packetBitCount - packet.length).fill(0));
+      sendPacket(packet, startSeconds);
+      startSeconds += packetDurationSeconds;
+    }
     // send all packets
     for(let i = 0; i < requestedPacketCount; i++) {
       let packet = packer.getBits(packetIndeces[i]);

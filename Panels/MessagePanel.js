@@ -28,6 +28,10 @@ class MessagePanel extends BasePanel {
     this.addDynamicText('bytes', 0);
     this.closeField();
 
+    this.addCheckboxes('packet-options', [
+      { text: 'Send First Packet Twice', id: 'first-packet-twice', checked: true },
+    ]);
+
     this.addEventListener('send-button-click', () => {
       if(this.getSendButtonText() === 'Send') {
         this.dispatcher.emit('sendClick');
@@ -46,6 +50,8 @@ class MessagePanel extends BasePanel {
     });
     this.dispatcher.emit('dataTypeChange', {values: [this.getDataType()]});
   }
+  setIsFirstPacketSentTwice = (checked) => this.setCheckedById('first-packet-twice', checked);
+  getIsFirstPacketSentTwice = () => this.getCheckedById('first-packet-twice');
   getSendButtonText = () => this.getValueById('send-button');
   setSendButtonText = text => this.setValueById('send-button', text);
   setMessageText = text => {
