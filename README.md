@@ -8,6 +8,8 @@ Transfer data via Web Audio API.
 
 This experiment had a goal to transfer text or a binary file using sound waves. Binary data is modulated using many oscillators using Mult-Frequency Shift-Keying (MFSK). The audio analyzer is used to demodulate the signal back into its original form.
 
+![Data Over Audio Screenshot](./screenshot.png)
+
 # How fast can it go?
 
 Fast enough knock your socks off... by erosion. Sticking with just telphone frequencies (300 Hz to 3.4 kHz) I was able to get it working at just under 1 Kbps when using my laptop alone. When communicating with a mobile phone running the same web page, the speeds were dismal. 138 bps for telephone frequencies, 538 bps for human hearing frequencies. The effective data rate is about half of that if you consider the overhead of error correction and packetization headers.
