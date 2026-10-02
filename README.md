@@ -1,4 +1,7 @@
 # Data Over Audio
+
+![Data Over Audio](./social-preview.jpg)
+
 *AKA Air Wobbler*
 
 Transfer data via Web Audio API.
@@ -113,3 +116,6 @@ I was rubber ducking my way through the issues as I experimented with this proje
 - [May 14, 2024: Packet Error Detection](https://lewismoten3.wordpress.com/2024/05/14/packet-error-detection/)
 - [May 15, 2024: Packet Recovery](https://lewismoten3.wordpress.com/2024/05/15/packet-recovery/)
 - [May 18, 2024: End of Sound](https://lewismoten3.wordpress.com/2024/05/18/end-of-sound/)
+
+![Data Over Audio Logo](./logo.png)
+
